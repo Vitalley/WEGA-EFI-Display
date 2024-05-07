@@ -1,0 +1,186 @@
+MPLINK 4.49, Linker
+Linker Map File - Created Wed Nov 03 20:45:20 2021
+
+                                 Section Info
+                  Section       Type    Address   Location Size(Bytes)
+                ---------  ---------  ---------  ---------  ---------
+                   .org_0       code   0x000000    program   0x000000
+                   .org_1       code   0x000000    program   0x000004
+                   .org_2       code   0x000004    program   0x0007ca
+                   .org_3       code   0x000400    program   0x0000c6
+                   .org_4       code   0x000500    program   0x0001ae
+                   .org_5       code   0x000600    program   0x000256
+   .config_2007_DISPLAY.O       code   0x002007    program   0x000002
+
+
+
+                              Program Memory Usage 
+                               Start         End      
+                           ---------   ---------      
+                            0x000000    0x000001      
+                            0x000004    0x0003e8      
+                            0x000400    0x000462      
+                            0x000500    0x0005d6      
+                            0x000600    0x00072a      
+                            0x002007    0x002007      
+            1613 out of 2182 program addresses used, program memory utilization is 73%
+
+
+
+                              Symbols - Sorted by Name
+                     Name    Address   Location    Storage File                     
+                ---------  ---------  ---------  --------- ---------                
+              APROXIMIZER   0x000720    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    BCD16   0x0002e9    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    BRGHT   0x0001fd    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   BR_DWN   0x000202    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  BR_NEXT   0x000204    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    BR_UP   0x0001ff    program     static D:\DOC\Project\WEGA\Display\display.asm
+                       CC   0x00006d    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    CCNXT   0x000070    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  CHK_SUM   0x00026b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 CHSM_ERR   0x0002c1    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      CLT   0x0000a9    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   CLT_EX   0x0000c0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    DELAY   0x0002da    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     DESL   0x000195    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     ECON   0x00017a    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     FUEL   0x0001a4    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 GET_SIZE   0x00024a    program     static D:\DOC\Project\WEGA\Display\display.asm
+              GET_VERSION   0x000242    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  HEXWIEV   0x0006f0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     INIT   0x00001b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   Int_Rx   0x000228    program     static D:\DOC\Project\WEGA\Display\display.asm
+              LAMBDA_CHAR   0x0003e4    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                 LCD_Init   0x00038d    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                     LCHR   0x0003ce    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                     LEVL   0x0001f9    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     LOGO   0x000400    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 LPG_CHAR   0x0003bd    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+               LPG_CHAR_S   0x00020b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      LTR   0x00019d    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  MAP_OFF   0x000139    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   MAP_Tr   0x00012b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                MAP_Trans   0x000500    program     static D:\DOC\Project\WEGA\Display\display.asm
+               MAP_Trans2   0x000600    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   MAR_EX   0x00013c    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      MCH   0x0003d4    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                     MUL8   0x00031e    program     static D:\DOC\Project\WEGA\Display\MUL8X8.ASM
+                       NN   0x00005c    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      NUL   0x00023a    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    N_CON   0x000410    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   OLDMAP   0x000125    program     static D:\DOC\Project\WEGA\Display\display.asm
+                READ_DATA   0x000257    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 READ_STR   0x0002c5    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      RET   0x000014    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     SCR1   0x000114    program     static D:\DOC\Project\WEGA\Display\display.asm
+                SET_CGRAM   0x0003ad    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                   SPEEDW   0x000703    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   SYM_BO   0x00042b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  SYM_DEG   0x00043b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  SYM_DOT   0x00041b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 SYM_FUEL   0x000443    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 SYM_F_ER   0x00045b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    SYM_L   0x000433    program     static D:\DOC\Project\WEGA\Display\display.asm
+                SYM_LAMBD   0x00044b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    SYM_O   0x000423    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    SYM_V   0x000453    program     static D:\DOC\Project\WEGA\Display\display.asm
+                Send_Char   0x000343    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                 Send_Cmd   0x000356    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                   TMR_EV   0x000213    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   TMR_OF   0x000223    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      VEH   0x000161    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    WHEEL   0x000219    program     static D:\DOC\Project\WEGA\Display\display.asm
+                Wait_Busy   0x000369    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                   adjBCD   0x000313    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   adjDEC   0x000309    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     conv   0x0000c3    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  d100mks   0x0002e3    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 del10mks   0x000383    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                  delay20   0x0002c7    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   delay5   0x0002d0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      dll   0x0002e5    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   loop16   0x0002f0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    sch_b   0x000343    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                     scmd   0x000356    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+
+
+
+                              Symbols - Sorted by Address
+                     Name    Address   Location    Storage File                     
+                ---------  ---------  ---------  --------- ---------                
+                      RET   0x000014    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     INIT   0x00001b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                       NN   0x00005c    program     static D:\DOC\Project\WEGA\Display\display.asm
+                       CC   0x00006d    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    CCNXT   0x000070    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      CLT   0x0000a9    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   CLT_EX   0x0000c0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     conv   0x0000c3    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     SCR1   0x000114    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   OLDMAP   0x000125    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   MAP_Tr   0x00012b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  MAP_OFF   0x000139    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   MAR_EX   0x00013c    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      VEH   0x000161    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     ECON   0x00017a    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     DESL   0x000195    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      LTR   0x00019d    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     FUEL   0x0001a4    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     LEVL   0x0001f9    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    BRGHT   0x0001fd    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    BR_UP   0x0001ff    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   BR_DWN   0x000202    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  BR_NEXT   0x000204    program     static D:\DOC\Project\WEGA\Display\display.asm
+               LPG_CHAR_S   0x00020b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   TMR_EV   0x000213    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    WHEEL   0x000219    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   TMR_OF   0x000223    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   Int_Rx   0x000228    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      NUL   0x00023a    program     static D:\DOC\Project\WEGA\Display\display.asm
+              GET_VERSION   0x000242    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 GET_SIZE   0x00024a    program     static D:\DOC\Project\WEGA\Display\display.asm
+                READ_DATA   0x000257    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  CHK_SUM   0x00026b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 CHSM_ERR   0x0002c1    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 READ_STR   0x0002c5    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  delay20   0x0002c7    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   delay5   0x0002d0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    DELAY   0x0002da    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  d100mks   0x0002e3    program     static D:\DOC\Project\WEGA\Display\display.asm
+                      dll   0x0002e5    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    BCD16   0x0002e9    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   loop16   0x0002f0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   adjDEC   0x000309    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   adjBCD   0x000313    program     static D:\DOC\Project\WEGA\Display\display.asm
+                     MUL8   0x00031e    program     static D:\DOC\Project\WEGA\Display\MUL8X8.ASM
+                Send_Char   0x000343    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                    sch_b   0x000343    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                 Send_Cmd   0x000356    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                     scmd   0x000356    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                Wait_Busy   0x000369    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                 del10mks   0x000383    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                 LCD_Init   0x00038d    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                SET_CGRAM   0x0003ad    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                 LPG_CHAR   0x0003bd    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                     LCHR   0x0003ce    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                      MCH   0x0003d4    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+              LAMBDA_CHAR   0x0003e4    program     static D:\DOC\Project\WEGA\Display\lcdrout.inc
+                     LOGO   0x000400    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    N_CON   0x000410    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  SYM_DOT   0x00041b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    SYM_O   0x000423    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   SYM_BO   0x00042b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    SYM_L   0x000433    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  SYM_DEG   0x00043b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 SYM_FUEL   0x000443    program     static D:\DOC\Project\WEGA\Display\display.asm
+                SYM_LAMBD   0x00044b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                    SYM_V   0x000453    program     static D:\DOC\Project\WEGA\Display\display.asm
+                 SYM_F_ER   0x00045b    program     static D:\DOC\Project\WEGA\Display\display.asm
+                MAP_Trans   0x000500    program     static D:\DOC\Project\WEGA\Display\display.asm
+               MAP_Trans2   0x000600    program     static D:\DOC\Project\WEGA\Display\display.asm
+                  HEXWIEV   0x0006f0    program     static D:\DOC\Project\WEGA\Display\display.asm
+                   SPEEDW   0x000703    program     static D:\DOC\Project\WEGA\Display\display.asm
+              APROXIMIZER   0x000720    program     static D:\DOC\Project\WEGA\Display\display.asm
+
+

@@ -1,0 +1,1898 @@
+,,,; Исправлена ошибка зависания дисплея
+,,,; 10,12,15 Вывод температуры в полном формате без таблицы, ошибка около 2,5%
+,,,; 11.12.15 Вывод расхода топлива литры, час
+,,,; 04.01.16 Исправлен вывод  дробных чисел
+,,,; 03.03.16 Добавлена проверка на максимальный и минимальный размер пакета
+,,,; 08.07.16 Добавлена библитека вывода с удлиннёнными состояниями на выходе
+,,,; 08.07.16 Диначеское отображение информации в зависимости от состояния
+,,,
+,,,
+,,,        list      p=16f628           ; list directive to define processor
+,,,;       #include <C:\Program Files\MPLAB IDE\MCHIP_Tools\p16F628a.inc>       ; processor specific variab
+,,,        #include <p16F628a.inc>
+,,,        errorlevel  -302              ; suppress message 302 from list file
+,,,        #include macro.inc
+,,,jz      macro   LBL
+,,,        btfsc   STATUS,Z
+,,,        goto    LBL
+,,,        endm
+,,,jnz     macro   LBL
+,,,        btfss   STATUS,Z
+,,,        goto    LBL
+,,,        endm
+,,,jc      macro   LBL
+,,,        btfss   STATUS,C
+,,,        goto    LBL
+,,,        endm
+,,,jnc     macro   LBL
+,,,        btfsc   STATUS,C
+,,,        goto    LBL
+,,,        endm
+,,,bank0   macro
+,,,        bcf     STATUS,RP0
+,,,        bcf     STATUS,RP1
+,,,        endm
+,,,bank1   macro
+,,,        bsf     STATUS,RP0
+,,,        bcf     STATUS,RP1
+,,,        endm
+,,,bank2   macro
+,,,        bcf     STATUS,RP0
+,,,        bsf     STATUS,RP1
+,,,        endm
+,,,bank3   macro
+,,,        bsf     STATUS,RP0
+,,,        bsf     STATUS,RP1
+,,,        endm
+,,,let     macro   aa,bb
+,,,        movlw   bb
+,,,        movwf   aa
+,,,        endm
+,,,movab macro     aa,bb
+,,,        movfw   aa
+,,,        movwf   bb
+,,,        endm
+,,,
+,,,
+00002007,0000,, __CONFIG _CP_OFF & _WDT_OFF & _BODEN_OFF & _PWRTE_ON & _XT_OSC & _LVP_OFF
+,,,
+,,,;====================================================================
+,,,;
+,,,;            DISPLAY 16х2 FOR WEGA INJECTION SYSTEM
+,,,;
+,,,;====================================================================
+,,,
+,,,; Переменные
+,,,W_TEMP  EQU             07F
+,,,
+,,,        cblock  20
+,,,
+,,,AF
+,,,NNN
+,,,BBB
+,,,CCC
+,,,DDD
+,,,
+,,,STAT            ; Отображает режим работы (побитовый) [0]-Motor on [1]-Warm_Up on [2]-IAC [3]-Accel [4]-
+,,,ERR             ; Биты ошибок Bit:[0]-WDT, [1]-BOR, [2]-T.Inj, [3]-Err.Copm, [4]-COLT,[5]-MAP
+,,,STPCNT          ; Позиция шагового двигателя
+,,,A_TMP           ; *Показания ДТВ
+,,,COLT            ; Показания ДТОЖ
+,,,MAP             ; Разряжение 0FH -Offset, 0FAH - 100КПа
+,,,TPS             ; Положение дроссельной заслонки <14H IAC
+,,,O2S             ; *Показаняи датчика кислорода
+,,,POWER           ; Напряжение боротовой сети/10,2
+,,,SPD             ; Обороты двигателя
+,,,T_INJ_L
+,,,T_INJ_H         ; Время впрыска(мкс)
+,,,;
+,,,INJ_LAG_L
+,,,INJ_LAG_H
+,,,
+,,,RqFl            ; Время впрыска при давлении 110КПа
+,,,RqFh
+,,,CRANK_COLT_L    ; Время впрыска при пуске на холодную 30ms
+,,,CRANK_COLT_H
+,,,CRANK_WARM_L    ; Время впрыска при пуске на горячую 5ms
+,,,CRANK_WARM_H
+,,,WARM_80         ; Обогащение при прогреве горячего вдигателя (+80)
+,,,WARM_20         ; Обогащение при прогреве холодного двигателя (-40)
+,,,
+,,,res1
+,,,                ;
+,,,WARM_40
+,,,WARM_50
+,,,D_TPS           ; Delta TPS
+,,,ENR_12
+,,,
+,,,RCOl            ;
+,,,RCOh
+,,,MCKl            ; Счётчик моточасов
+,,,MCKh
+,,,
+,,,
+,,,SPD_ENR
+,,,WARM_ENR                ; ENRICHMENT
+,,,
+,,,        Temp    ; (LCD)-флаг busy и текущий адрес DDRAM
+,,,        Char    ; (LCD)-cохранение при выводе символа или команды
+,,,        temp1, temp2
+,,,        STATUS_TEMP
+,,,        PCLATH_TEMP
+,,,        FLAG    ; Флаги приёма пакетов [0]- AF ,[1]- 00,[2]-version, [3]-Size
+,,,        FLAG2   ; [0]- хз, [1]- флаг приятия данных, [2]- флаг обновления дисплея [3] - флаг переноса от
+,,,        SIZE    ; Размер пакета (получает в посылке)
+,,,        BT_CNT  ; Сётчик байт приёма
+,,,        IN_CNT          ; Счётчик приёма
+,,,        CHK_SUM_RX      ; Контрольная сумма приёма
+,,,        Colt1
+,,,           DispEr ; Счётчик ожидания готовности ЖКИ
+,,,        BLINK   ;РЕГИСТР МЕРЦАНИЯ
+,,,        LPG_LEVEL;Уровень газа
+,,,        cnt1,cnt2       ;регистры программируемой задержки
+,,,        rab0,rab1,rab2,rab3,count,aargb2,aargb1,temp
+,,,MULc            ; 8 bit multiplicand
+,,,MULp            ; 8 bit multiplier
+,,,H_byte          ; High byte of the 16 bit result
+,,,L_byte          ; Low byte of the 16 bit result
+,,,
+,,,        endc
+,,,
+,,,; Назначение портов дисплея
+,,,LCD_DATA         EQU     PORTB
+,,,LCD_DATA_TRIS    EQU     TRISB
+,,,
+,,,#define E       PORTB,3 ;Сигнал управления Е
+,,,#define RW      PORTA,2 ;Сигнал управления R/W
+,,,#define RS      PORTA,3 ;Сигнал управления RS
+,,,
+,,,#DEFINE BRIGHT  PORTA,4 ;Порт регулировки яркости дисплея
+,,,
+,,,#DEFINE VERSION 010H     ; ВЕРСИЯ ПРИНИМАЕМОГО ПАКЕТА(другие не принимает)
+,,,
+,,,;Параметры настройки компараторов для измерения уровня топлива
+,,,; VRCON voltage 1010xxxx
+,,,#DEFINE LPG_L   b'10101110'     ; >2.9V Обрыв датчика уровня топлива
+,,,#DEFINE LPG_FULL        b'10101010'     ; <2.08v
+,,,#DEFINE LPG_L3  b'10100110'     ; <1.25v
+,,,#DEFINE LPG_L2  b'10100100'     ; <0.83v
+,,,#DEFINE LPG_L1  b'10100010'     ; <0.42v
+,,,#DEFINE LPG_NULL        b'10100001'     ; <0.21v
+,,,
+,,,
+,,,        ORG     0               ; processor reset vector
+00000000,0000,,        NOP
+00000001,2817,,        GOTO    INIT            ; go to beginning of program
+,,,;------------------------------------------------------------------
+,,,;                       ОБРАБОТКА ПРЕРЫВАНИЙ
+,,,;------------------------------------------------------------------
+,,,        ORG     4               ; Вектор прерываний
+00000004,00FF,,        MOVWF   W_TEMP          ; Копировать W во временный регистр независимо от текущего банка
+00000005,0E00,,        SWAPF   STATUS,W                ; Обменять полубайты в регистре STATUS и записать в W
+00000006,0180,,        CLRF    STATUS          ;
+00000007,00CA,,        MOVWF   STATUS_TEMP     ; Сохранить STATUS во временном регистре банка 0
+00000008,0800,,        MOVF    PCLATH, W               ;
+00000009,00CB,,        MOVWF   PCLATH_TEMP             ;
+0000000A,0180,,        CLRF    PCLATH          ;
+,,,;       btfsc   INTCON,INTF             ;импульс датчика скорости
+,,,;       goto    SPARK
+,,,;       BTFSC   PIR1,CCP1IF             ;
+,,,;       GOTO    COMP_EVNT
+,,,;       BTFSC   PIR1,TMR1IF             ; Проверка переполнение таймера ТМР1
+,,,;       GOTO    TMR_OF
+0000000B,1800,,        BTFSC   INTCON,T0IF
+0000000C,29F0,,        GOTO    TMR_EV          ; Проверка переполнение таймера ТМР0
+0000000D,1800,,        BTFSC   PIR1,RCIF       ; USART Rx?
+0000000E,2A04,,        GOTO    Int_Rx
+0000000F,2810,,        GOTO    RET
+,,,;------------------------ INT exit-----------------------
+00000010,084B,RET,RET     MOVF    PCLATH_TEMP, W  ;
+00000011,0080,,        MOVWF   PCLATH          ;
+00000012,0E4A,,        SWAPF   STATUS_TEMP,W   ;Обменять полубайты оригинального значения STATUS и записать в W (восста
+00000013,0080,,        MOVWF   STATUS          ;Восстановить значение STATUS из регистра W
+00000014,0EFF,,        SWAPF   W_TEMP,F                ;Обменять полубайты в регистре W_TEMP и сохранить результат в W_
+00000015,0E7F,,        SWAPF   W_TEMP,W                ;Обменять полубайты в регистре W_TEMP и восстановить оригинально
+00000016,0009,,        RETFIE
+,,,
+,,,
+,,,;------------------------------------------------------------------
+,,,;                       ИНИЦИАЛИЗАЦИЯ
+,,,;------------------------------------------------------------------
+,,,INIT    bank1
+00000017,1400,,        - bsf     STATUS,RP0
+00000018,1000,,        - bcf     STATUS,RP1
+,,,        let     TRISA,b'00000011'
+00000019,3003,,        - movlw   b'00000011'
+0000001A,0080,,        - movwf   TRISA
+,,,        let     TRISB,b'00000011'
+0000001B,3003,,        - movlw   b'00000011'
+0000001C,0080,,        - movwf   TRISB
+,,,        let     OPTION_REG,b'10000111'  ; Подтягивающие резисторы включены(Предделитель на tmr0)
+0000001D,3087,,        - movlw   b'10000111'
+0000001E,0080,,        - movwf   OPTION_REG
+,,,        let     PIE1,B'00100001'        ; Записать маску прерываний в регистр PIE1
+0000001F,3021,,        - movlw   B'00100001'
+00000020,0080,,        - movwf   PIE1
+,,,        let     VRCON,B'10100001'
+00000021,30A1,,        - movlw   B'10100001'
+00000022,0080,,        - movwf   VRCON
+,,,; Настройка УСАРТ
+00000023,3019,,        MOVLW   .25                     ; Установить скорость обмена данными(F=9615 Hz)
+00000024,0080,,        MOVWF   SPBRG
+00000025,3024,,        MOVLW   B'00100100'             ; Передача 8 - разрядных данных, включить передатчик,
+00000026,0080,,        MOVWF   TXSTA           ; ВЫСОКОСКОРОСТНОЙ асинхронный режим
+,,,
+,,,        ;BSF      PIE1,TXIE,0           ; Разрешить прерывания от передатчика USART
+00000027,1400,,        BSF      PIE1,RCIE              ; Разрешить прерывания от приемника USART
+,,,
+,,,
+,,,        bank0
+00000028,1000,,        - bcf     STATUS,RP0
+00000029,1000,,        - bcf     STATUS,RP1
+0000002A,0064,,        CLRWDT
+0000002B,3090,,        MOVLW   B'10010000'             ; РАБОТА ПОРТА РАЗРЕШЕНА 8 БИТ ДАННЫХ
+0000002C,0080,,        MOVWF   RCSTA           ; включить модуль USART
+,,,        let     CMCON,b'00000010'       ; ОТКЛЮЧАЕМ КОМПАРАТОРЫ
+0000002D,3002,,        - movlw   b'00000010'
+0000002E,0080,,        - movwf   CMCON
+0000002F,0180,,        CLRF    PORTB
+00000030,0180,,        CLRF    PORTA
+00000031,0180,,        CLRF    TMR0
+00000032,01CC,,        CLRF    FLAG
+00000033,01CD,,        CLRF    FLAG2
+00000034,01CF,,        CLRF    BT_CNT
+00000035,01D1,,        CLRF    CHK_SUM_RX
+00000036,01A6,,        CLRF    ERR
+00000037,0064,,        CLRWDT
+,,,        let     LPG_LEVEL,.7
+00000038,3007,,        - movlw   .7
+00000039,00D5,,        - movwf   LPG_LEVEL
+,,,;       let     INTCON,B'11010000'      ; ГЛОБАЛЬНЕО РАЗРЕШЕНИЕ ПРЕРЫВАНИЙ
+,,,
+,,,        let     INTCON,B'11110000'      ; ГЛОБАЛЬНЕО РАЗРЕШЕНИЕ ПРЕРЫВАНИЙ
+0000003A,30F0,,        - movlw   B'11110000'
+0000003B,0080,,        - movwf   INTCON
+,,,
+0000003C,2377,,        CALL    LCD_Init        ; Инициализация дисплея
+,,,
+0000003D,0064,,        CLRWDT
+0000003E,3001,,        MOVLW   CLR_DISP        ;
+0000003F,2334,,        CALL    Send_Cmd
+00000040,300C,,        MOVLW   DISP_ON
+00000041,2334,,        CALL    Send_Cmd
+00000042,3006,,        MOVLW   ENTRY_INC
+00000043,2334,,        CALL    Send_Cmd
+,,,;
+00000044,0064,,        CLRWDT
+,,,
+,,,;       CALL    Wait_Busy       ; Чтение текущего адреса ОЗУ ЖКИ
+00000045,2397,,        CALL    SET_CGRAM
+00000046,0064,,        CLRWDT
+00000047,3001,,        MOVLW   01      ;Очистка дисплея
+00000048,2334,,        CALL    Send_Cmd
+00000049,3080,,        MOVLW   LINE1
+0000004A,2334,,        CALL    Send_Cmd
+,,,
+,,,
+,,,        let     temp1,.15
+0000004B,300F,,        - movlw   .15
+0000004C,00C8,,        - movwf   temp1
+0000004D,3004,,        MOVLW   HIGH LOGO
+0000004E,0080,,        MOVWF   PCLATH
+0000004F,3000,,        MOVLW   LOW LOGO
+00000050,00C9,,        MOVWF   temp2
+00000051,22A1,,        CALL    READ_STR
+00000052,231B,,        CALL    sch_b
+00000053,0AC9,,        INCF    temp2,F
+00000054,0BC8,,        DECFSZ  temp1,F
+00000055,2851,,        GOTO    $-4
+,,,
+,,,
+,,,
+00000056,30C0,NN,NN      MOVLW   LINE2
+00000057,2334,,        CALL    Send_Cmd
+00000058,0064,,        CLRWDT
+,,,
+,,,
+,,,        let     temp1,.15
+00000059,300F,,        - movlw   .15
+0000005A,00C8,,        - movwf   temp1
+0000005B,3004,,        MOVLW   HIGH N_CON
+0000005C,0080,,        MOVWF   PCLATH
+0000005D,3010,,        MOVLW   LOW N_CON
+0000005E,00C9,,        MOVWF   temp2
+0000005F,22A1,,        CALL    READ_STR
+00000060,231B,,        CALL    sch_b
+00000061,0AC9,,        INCF    temp2,F
+00000062,0BC8,,        DECFSZ  temp1,F
+00000063,285F,,        GOTO    $-4
+,,,
+,,,
+00000064,0064,,        CLRWDT
+00000065,2990,,        GOTO FUEL
+,,,
+00000066,22B6,,        CALL    DELAY
+00000067,3002,,        MOVLW   RTN_HOME
+00000068,2334,,        CALL    Send_Cmd
+00000069,22B6,,        CALL    DELAY
+,,,
+,,,
+,,,
+,,,
+,,,
+0000006A,1CCD,CC,CC      BTFSS   FLAG2,1
+0000006B,2856,,        GOTO    NN
+0000006C,0064,,        CLRWDT
+0000006D,1D4D,,        BTFSS   FLAG2,2
+0000006E,286A,,        GOTO    CC
+0000006F,114D,,        BCF     FLAG2,2
+,,,;MOVLW  01      ;Очистка дисплея
+,,,;       call    Send_Cmd
+,,,
+,,,
+00000070,3080,,        MOVLW   LINE1
+00000071,2334,,        CALL    Send_Cmd
+,,,
+00000072,3001,,        MOVLW   01H
+00000073,1925,,        BTFSC   STAT,2  ;ХХ
+00000074,3000,,        MOVLW   00H
+00000075,19A5,,        BTFSC   STAT,3  ;акселератор
+00000076,30D9,,        MOVLW   0D9H
+00000077,1A25,,        BTFSC   STAT,4  ;деакселератор
+00000078,30DA,,        MOVLW   0DAH
+00000079,1AA5,,        BTFSC   STAT,5  ; ЭПХХ
+0000007A,3003,,        MOVLW   03H
+0000007B,1B25,,        BTFSC   STAT,6  ; ЭМР
+0000007C,3002,,        MOVLW   02H
+0000007D,1C25,,        BTFSS   STAT,0  ; проверка пуска двигателя
+0000007E,2881,,        GOTO    $+3
+0000007F,1BA5,,        BTFSC   STAT,7  ; Прогрев после пуска показывает только на заведённом двигателе
+00000080,30ED,,        MOVLW   0EDH
+00000081,231B,,        CALL    sch_b
+,,,
+,,,
+,,,;----------------------------------------------
+,,,;       Вывод тахометра
+,,,;----------------------------------------------
+00000082,082E,,        Movfw   SPD
+00000083,00E0,,        MOVWF   MULc
+,,,        let     MULp,.25
+00000084,3019,,        - movlw   .25
+00000085,00E1,,        - movwf   MULp
+00000086,22F6,,        CALL    MUL8
+,,,
+00000087,0863,,        Movfw   L_byte
+00000088,00DD,,        MOVWF   aargb2
+00000089,0862,,        Movfw   H_byte
+0000008A,00DE,,        MOVWF   aargb1
+0000008B,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+,,,
+0000008C,0858,,        MOVF    rab0,w  ;Тысячи на дисплей
+0000008D,3E30,,        ADDLW   30
+0000008E,231B,,        CALL    sch_b
+0000008F,0859,,        MOVF    rab1,w  ;Сотни на дисплей
+00000090,3E30,,        ADDLW   30
+00000091,231B,,        CALL    sch_b
+00000092,085A,,        MOVF    rab2,w  ;Десятки на дисплей
+00000093,3E30,,        ADDLW   30
+00000094,231B,,        CALL    sch_b
+00000095,085B,,        MOVF    rab3,w  ;Единицы на дисплей
+00000096,3E30,,        ADDLW   30
+00000097,231B,,        CALL    sch_b
+,,,
+,,,;       movlw   020H
+,,,;       call    sch_b
+,,,;-----------------------------------------
+,,,;       вывод температуры
+,,,;-----------------------------------------
+00000098,1E26,,        BTFSS   ERR,4   ;Проверяем ошибу ДТОЖ
+00000099,28A5,,        GOTO    CLT
+0000009A,1DD4,,        BTFSS   BLINK,3 ; РЕГИСТР МОРГАНИЯ
+0000009B,28A5,,        GOTO    CLT
+0000009C,3020,,        MOVLW   20      ; ОЧИЩАЕМ ЗНАКОМЕСТА
+0000009D,231B,,        CALL    sch_b
+0000009E,3020,,        MOVLW   20
+0000009F,231B,,        CALL    sch_b
+000000A0,3020,,        MOVLW   20
+000000A1,231B,,        CALL    sch_b
+000000A2,3020,,        MOVLW   20
+000000A3,231B,,        CALL    sch_b
+000000A4,28BC,,        GOTO    CLT_EX  ;
+,,,
+,,,
+000000A5,,CLT,CLT
+000000A5,302C,,        MOVLW   .44     ; отрицательные температуры 45
+000000A6,0228,,        SUBWF   A_TMP,W
+000000A7,00D2,,        MOVWF   Colt1
+000000A8,3020,,        MOVLW   20
+000000A9,1800,,        BTFSC   STATUS,C
+000000AA,28AF,,        GOTO    $+5
+,,,
+000000AB,0852,,        Movfw   Colt1
+000000AC,3C00,,        SUBLW   .0
+000000AD,00D2,,        MOVWF   Colt1
+000000AE,302D,,        MOVLW   '-'     ; -
+,,,
+000000AF,231B,,        CALL    sch_b
+000000B0,0852,,        Movfw   Colt1
+000000B1,00DD,,        MOVWF   aargb2
+000000B2,01DE,,        CLRF    aargb1
+000000B3,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+000000B4,085A,,        MOVF    rab2,w  ;Сотни на дисплей
+000000B5,3E30,,        ADDLW   30
+000000B6,231B,,        CALL    sch_b
+000000B7,085B,,        MOVF    rab3,w  ;Десятки на дисплей
+000000B8,3E30,,        ADDLW   30
+000000B9,231B,,        CALL    sch_b
+,,,
+000000BA,3004,,        MOVLW   04H     ; градусы
+000000BB,231B,,        CALL    sch_b
+000000BC,,CLT_EX,CLT_EX
+,,,
+,,,;----------------------------------------------
+,,,;       Вывод напряжения на дисплей
+,,,;----------------------------------------------
+000000BC,082D,,        Movfw   POWER
+000000BD,00DD,,        MOVWF   aargb2
+000000BE,01DE,,        CLRF    aargb1
+,,,
+000000BF,22C5,conv,conv    CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+000000C0,0859,,        MOVF    rab1,w  ;Тысячи на дисплей
+000000C1,3E30,,        ADDLW   30
+000000C2,231B,,        CALL    sch_b
+000000C3,085A,,        MOVF    rab2,w  ;Сотни на дисплей
+000000C4,3E30,,        ADDLW   30
+000000C5,231B,,        CALL    sch_b
+,,,
+000000C6,19CD,,        BTFSC   FLAG2,3 ; Флаг больших шагов РХХ, освобождаем знакоместо
+000000C7,28CD,,        GOTO    $+6
+000000C8,302C,,        MOVLW   ','     ; ЗПТ
+000000C9,231B,,        CALL    sch_b
+000000CA,085B,,        MOVF    rab3,w  ;Десятки на дисплей
+000000CB,3E30,,        ADDLW   30
+000000CC,231B,,        CALL    sch_b
+,,,
+000000CD,3007,,        MOVLW   07H
+000000CE,231B,,        CALL    sch_b
+,,,
+,,,
+,,,;----------------------------------------------
+,,,;       Вывод позиции РХХ
+,,,;----------------------------------------------
+,,,
+000000CF,0827,,        Movfw   STPCNT
+000000D0,00DD,,        MOVWF   aargb2
+000000D1,01DE,,        CLRF    aargb1
+000000D2,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+,,,
+000000D3,0859,,        MOVF    rab1,w  ;Тысячи на дисплей
+000000D4,1800,,        BTFSC   STATUS,Z
+000000D5,28DA,,        GOTO    $+5
+000000D6,3E30,,        ADDLW   30
+000000D7,231B,,        CALL    sch_b
+000000D8,15CD,,        BSF     FLAG2,3 ; Флаг переноса, число шаков более 99
+000000D9,28DB,,        GOTO    $+2
+000000DA,11CD,,        BCF     FLAG2,3 ;
+000000DB,085A,,        MOVF    rab2,w  ;Сотни на дисплей
+000000DC,3E30,,        ADDLW   30
+000000DD,231B,,        CALL    sch_b
+000000DE,085B,,        MOVF    rab3,w  ;Десятки на дисплей
+000000DF,3E30,,        ADDLW   30
+000000E0,231B,,        CALL    sch_b
+,,,
+000000E1,30C1,,        MOVLW   0C1h
+000000E2,231B,,        CALL    sch_b
+,,,;       MOVLW   020H
+,,,;       CALL    sch_b
+,,,; ВТОРАЯ ЛИНИЯ
+000000E3,0064,,        CLRWDT
+000000E4,30C0,,        MOVLW   LINE2
+000000E5,2334,,        CALL    Send_Cmd
+000000E6,1825,,        BTFSC   STAT,0  ;пуск двигателя
+000000E7,290D,,        GOTO    SCR1
+,,,;вывод моточасов
+000000E8,0842,,        Movfw   MCKl
+000000E9,00DD,,        MOVWF   aargb2
+000000EA,0843,,        Movfw   MCKh
+000000EB,00DE,,        MOVWF   aargb1
+000000EC,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+000000ED,304D,,        MOVLW   'M'
+000000EE,231B,,        CALL    sch_b
+000000EF,306F,,        MOVLW   'o'
+000000F0,231B,,        CALL    sch_b
+000000F1,3074,,        MOVLW   't'
+000000F2,231B,,        CALL    sch_b
+000000F3,306F,,        MOVLW   'o'
+000000F4,231B,,        CALL    sch_b
+000000F5,303A,,        MOVLW   ':'
+000000F6,231B,,        CALL    sch_b
+000000F7,0858,,        MOVF    rab0,w  ;Тысячи на дисплей
+000000F8,3E30,,        ADDLW   30
+000000F9,231B,,        CALL    sch_b
+000000FA,0859,,        MOVF    rab1,w  ;Сотни на дисплей
+000000FB,3E30,,        ADDLW   30
+000000FC,231B,,        CALL    sch_b
+000000FD,085A,,        MOVF    rab2,w  ;Десятки на дисплей
+000000FE,3E30,,        ADDLW   30
+000000FF,231B,,        CALL    sch_b
+00000100,085B,,        MOVF    rab3,w  ;Единицы на дисплей
+00000101,3E30,,        ADDLW   30
+00000102,231B,,        CALL    sch_b
+00000103,3068,,        MOVLW   'h'
+00000104,231B,,        CALL    sch_b
+00000105,3020,,        MOVLW   20
+00000106,231B,,        CALL    sch_b
+00000107,3045,,        MOVLW   'E'
+00000108,231B,,        CALL    sch_b
+00000109,2700,,        CALL HEXWIEV    ; Вывод кода ошибки EFI
+,,,
+0000010A,3020,,        MOVLW   20
+0000010B,231B,,        CALL    sch_b
+,,,
+,,,
+0000010C,2990,, GOTO FUEL
+,,,
+,,,
+0000010D,3006,SCR1,SCR1    MOVLW   06
+0000010E,231B,,        CALL    sch_b
+,,,
+,,,
+,,,; Вывод показания ДАД
+0000010F,1EA6,,        BTFSS   ERR,5   ;Проверяем ошибу ДАД
+00000110,2917,,        GOTO    $+7
+00000111,1DD4,,        BTFSS   BLINK,3 ; РЕГИСТР МОРГАНИЯ
+00000112,2917,,        GOTO    $+5
+00000113,3020,,        MOVLW   20      ; ОЧИЩАЕМ ЗНАКОМЕСТА
+00000114,231B,,        CALL    sch_b
+00000115,3020,,        MOVLW   20
+00000116,292F,,        GOTO    MAR_EX  ; ВТОРОЕ ЗНАКОМЕСТО ОЩИШАЕТСЯ ПОСЛЕ ПЕРХОДА
+00000117,082A,,        Movfw   MAP
+00000118,3EF0,,        ADDLW   -.16
+00000119,3E29,,        ADDLW   -(.230-.16+.1)
+0000011A,1800,,        BTFSC   STATUS,C
+0000011B,292C,,        GOTO    MAP_OFF
+0000011C,3005,,        MOVLW   HIGH MAP_Trans
+0000011D,0080,,        MOVWF   PCLATH
+0000011E,3010,,        MOVLW   .16
+0000011F,022A,,        SUBWF   MAP,W
+00000120,00C9,,        MOVWF   temp2
+00000121,22A1,,        CALL    READ_STR
+00000122,00DD,,        MOVWF   aargb2
+00000123,01DE,,        CLRF    aargb1
+00000124,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+00000125,085A,,        MOVF    rab2,w  ;Сотни на дисплей
+00000126,3E30,,        ADDLW   30
+00000127,231B,,        CALL    sch_b
+00000128,085B,,        MOVF    rab3,w  ;Десятки на дисплей
+00000129,3E30,,        ADDLW   30
+0000012A,231B,,        CALL    sch_b
+0000012B,2930,,        GOTO    $+5
+0000012C,302D,MAP_OFF,MAP_OFF MOVLW   "-"
+0000012D,231B,,        CALL    sch_b
+0000012E,302D,,        MOVLW   "-"
+0000012F,231B,MAR_EX,MAR_EX  CALL    sch_b
+,,,
+00000130,304B,,        MOVLW   "K"
+00000131,231B,,        CALL    sch_b
+00000132,30BE,,        MOVLW   0BEH
+00000133,231B,,        CALL    sch_b
+,,,
+00000134,3020,,        MOVLW   020
+00000135,231B,,        CALL    sch_b
+,,,
+00000136,1CA5,,        BTFSS   STAT,1
+00000137,2954,,        GOTO    VEH
+,,,;-----------------------------------------------
+,,,;       обогащение на прогреве
+,,,;-----------------------------------------------
+,,,        bank1
+00000138,1400,,        - bsf     STATUS,RP0
+00000139,1000,,        - bcf     STATUS,RP1
+0000013A,0845,,        Movfw   WARM_ENR
+,,,        bank0
+0000013B,1000,,        - bcf     STATUS,RP0
+0000013C,1000,,        - bcf     STATUS,RP1
+0000013D,00E0,,        MOVWF   MULc
+,,,        let     MULp,.100
+0000013E,3064,,        - movlw   .100
+0000013F,00E1,,        - movwf   MULp
+00000140,22F6,,        CALL    MUL8
+,,,
+00000141,01DE,,        CLRF    aargb1
+00000142,0D63,,        RLF     L_byte,W
+00000143,0D62,,        RLF     H_byte,W
+00000144,00DD,,        MOVWF   aargb2
+,,,
+,,,
+00000145,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+,,,
+,,,
+00000146,0859,,        MOVF    rab1,w  ;Сотни на дисплей
+00000147,3E30,,        ADDLW   30
+00000148,231B,,        CALL    sch_b
+00000149,085A,,        MOVF    rab2,w  ;Десятки на дисплей
+0000014A,3E30,,        ADDLW   30
+0000014B,231B,,        CALL    sch_b
+0000014C,085B,,        MOVF    rab3,w  ;Единицы на дисплей
+0000014D,3E30,,        ADDLW   30
+0000014E,231B,,        CALL    sch_b
+,,,
+0000014F,3025,,        MOVLW   025H
+00000150,231B,,        CALL    sch_b
+00000151,3020,,        MOVLW   020H
+00000152,231B,,        CALL    sch_b
+00000153,296D,,        GOTO    ECON
+,,,;-----------------------------------------------
+,,,;       обогащение по VE
+,,,;-----------------------------------------------
+,,,
+00000154,3020,VEH,VEH     MOVLW   020
+00000155,231B,,        CALL    sch_b
+,,,        bank1
+00000156,1400,,        - bsf     STATUS,RP0
+00000157,1000,,        - bcf     STATUS,RP1
+00000158,0844,,        Movfw   SPD_ENR
+,,,        bank0
+00000159,1000,,        - bcf     STATUS,RP0
+0000015A,1000,,        - bcf     STATUS,RP1
+0000015B,00E0,,        MOVWF   MULc
+,,,        let     MULp,.100
+0000015C,3064,,        - movlw   .100
+0000015D,00E1,,        - movwf   MULp
+0000015E,22F6,,        CALL    MUL8
+,,,
+0000015F,01DE,,        CLRF    aargb1
+,,,;       RLF     L_byte,W
+,,,;       RLF     H_byte,W
+00000160,0862,,        Movfw   H_byte
+00000161,00DD,,        MOVWF   aargb2
+00000162,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+00000163,085A,,        MOVF    rab2,w  ;Десятки на дисплей
+00000164,3E30,,        ADDLW   30
+00000165,231B,,        CALL    sch_b
+,,,
+00000166,085B,,        MOVF    rab3,w  ;Единицы на дисплей
+00000167,3E30,,        ADDLW   30
+00000168,231B,,        CALL    sch_b
+,,,
+00000169,3025,,        MOVLW   025H
+0000016A,231B,,        CALL    sch_b
+,,,
+0000016B,3020,,        MOVLW   020
+0000016C,231B,,        CALL    sch_b
+,,,
+,,,;       MOVLW   020H
+,,,;       CALL    sch_b
+,,,;test
+,,,; CALL HEXWIEV
+,,,; Вывод расхода топлива
+,,,; умножаем обороты на время впрыска и считаем по таблице
+,,,; старшый битт в таблице - точка
+0000016D,082E,ECON,ECON    Movfw   SPD
+0000016E,00E0,,        MOVWF   MULc
+0000016F,0D2F,,        RLF     T_INJ_L,W
+00000170,00C8,,        MOVWF   temp1
+00000171,0D30,,        RLF     T_INJ_H,W
+00000172,00C9,,        MOVWF   temp2
+00000173,0D48,,        RLF     temp1,W
+00000174,0D49,,        RLF     temp2,W
+,,,
+,,,
+00000175,00E1,,        MOVWF   MULp
+00000176,22F6,,        CALL    MUL8
+00000177,3006,,        MOVLW   HIGH Fuel
+00000178,0080,,        MOVWF   PCLATH
+00000179,0D63,,        RLF     L_byte,W
+0000017A,0D62,,        RLF     H_byte,W
+0000017B,22A2,,        CALL    READ_STR+1
+,,,
+0000017C,00C9,,        MOVWF   temp2
+0000017D,1BC9,,        BTFSC   temp2,7
+0000017E,3A80,,        XORLW   B'10000000'
+0000017F,00DD,,        MOVWF   aargb2
+00000180,01DE,,        CLRF    aargb1
+00000181,22C5,,        CALL    BCD16   ;Преобразование к десятичному виду
+,,,
+,,,
+00000182,1FC9,,        BTFSS   temp2,7
+00000183,2986,,        GOTO    $+3
+00000184,302E,,        MOVLW   "."
+00000185,2988,,        GOTO    $+3
+00000186,085A,,        MOVF    rab2,w  ;Десятки на дисплей
+00000187,3E30,,        ADDLW   30
+00000188,231B,,        CALL    sch_b
+00000189,085B,,        MOVF    rab3,w  ;Единицы на дисплей
+0000018A,3E30,,        ADDLW   30
+0000018B,231B,,        CALL    sch_b
+,,,
+,,,
+,,,
+0000018C,30B4,,        MOVLW   0B4H
+0000018D,231B,,        CALL    sch_b
+,,,
+,,,
+0000018E,3020,,        MOVLW   020
+0000018F,231B,,        CALL    sch_b
+,,,; Опознавание включения подсветки и регулировки яркости дисплея
+,,,FUEL    bank1
+00000190,1400,,        - bsf     STATUS,RP0
+00000191,1000,,        - bcf     STATUS,RP1
+,,,        let     VRCON,B'10100010'
+00000192,30A2,,        - movlw   B'10100010'
+00000193,0080,,        - movwf   VRCON
+,,,        bank0
+00000194,1000,,        - bcf     STATUS,RP0
+00000195,1000,,        - bcf     STATUS,RP1
+00000196,22AC,,        CALL    delay5
+00000197,1800,,        BTFSC   CMCON,C1OUT
+00000198,17CD,,        BSF     FLAG2,7;
+00000199,1C00,,        BTFSS   CMCON,C1OUT
+0000019A,13CD,,        BCF     FLAG2,7;
+,,,; ПРОВЕРКА НА ОБРЫВ ДАТЧИКА УРОВНЯ
+,,,        bank1
+0000019B,1400,,        - bsf     STATUS,RP0
+0000019C,1000,,        - bcf     STATUS,RP1
+,,,        let     VRCON,LPG_L
+0000019D,30AE,,        - movlw   b'10101110'
+0000019E,0080,,        - movwf   VRCON
+,,,        bank0
+0000019F,1000,,        - bcf     STATUS,RP0
+000001A0,1000,,        - bcf     STATUS,RP1
+000001A1,22AC,,        CALL    delay5
+000001A2,1800,,        BTFSC   CMCON,C2OUT
+000001A3,29A7,,        GOTO    $+4
+000001A4,3000,,        MOVLW   .0
+000001A5,00D5,,        MOVWF   LPG_LEVEL
+000001A6,29E5,,        GOTO    LEVL
+,,,
+,,,
+,,,        bank1
+000001A7,1400,,        - bsf     STATUS,RP0
+000001A8,1000,,        - bcf     STATUS,RP1
+,,,        let     VRCON,LPG_FULL
+000001A9,30AA,,        - movlw   b'10101010'
+000001AA,0080,,        - movwf   VRCON
+,,,        bank0
+000001AB,1000,,        - bcf     STATUS,RP0
+000001AC,1000,,        - bcf     STATUS,RP1
+000001AD,22AC,,        CALL    delay5
+000001AE,1800,,        BTFSC   CMCON,C2OUT
+000001AF,29B3,,        GOTO    $+4
+000001B0,3006,,        MOVLW   .6
+000001B1,00D5,,        MOVWF   LPG_LEVEL
+000001B2,29E5,,        GOTO    LEVL
+,,,
+,,,
+,,,
+,,,
+,,,        bank1
+000001B3,1400,,        - bsf     STATUS,RP0
+000001B4,1000,,        - bcf     STATUS,RP1
+,,,        let     VRCON,LPG_L3
+000001B5,30A6,,        - movlw   b'10100110'
+000001B6,0080,,        - movwf   VRCON
+,,,        bank0
+000001B7,1000,,        - bcf     STATUS,RP0
+000001B8,1000,,        - bcf     STATUS,RP1
+000001B9,22AC,,        CALL    delay5
+000001BA,1800,,        BTFSC   CMCON,C2OUT
+000001BB,29BF,,        GOTO    $+4
+000001BC,3005,,        MOVLW   .5
+000001BD,00D5,,        MOVWF   LPG_LEVEL
+000001BE,29E5,,        GOTO    LEVL
+,,,
+,,,        bank1
+000001BF,1400,,        - bsf     STATUS,RP0
+000001C0,1000,,        - bcf     STATUS,RP1
+,,,        let     VRCON,LPG_L2
+000001C1,30A4,,        - movlw   b'10100100'
+000001C2,0080,,        - movwf   VRCON
+,,,        bank0
+000001C3,1000,,        - bcf     STATUS,RP0
+000001C4,1000,,        - bcf     STATUS,RP1
+000001C5,22AC,,        CALL    delay5
+000001C6,1800,,        BTFSC   CMCON,C2OUT
+000001C7,29CB,,        GOTO    $+4
+000001C8,3004,,        MOVLW   .4
+000001C9,00D5,,        MOVWF   LPG_LEVEL
+000001CA,29E5,,        GOTO    LEVL
+,,,
+,,,        bank1
+000001CB,1400,,        - bsf     STATUS,RP0
+000001CC,1000,,        - bcf     STATUS,RP1
+,,,        let     VRCON,LPG_L1
+000001CD,30A2,,        - movlw   b'10100010'
+000001CE,0080,,        - movwf   VRCON
+,,,        bank0
+000001CF,1000,,        - bcf     STATUS,RP0
+000001D0,1000,,        - bcf     STATUS,RP1
+000001D1,22AC,,        CALL    delay5
+000001D2,1800,,        BTFSC   CMCON,C2OUT
+000001D3,29D7,,        GOTO    $+4
+000001D4,3003,,        MOVLW   .3
+000001D5,00D5,,        MOVWF   LPG_LEVEL
+000001D6,29E5,,        GOTO    LEVL
+,,,
+,,,        bank1
+000001D7,1400,,        - bsf     STATUS,RP0
+000001D8,1000,,        - bcf     STATUS,RP1
+,,,        let     VRCON,LPG_NULL
+000001D9,30A1,,        - movlw   b'10100001'
+000001DA,0080,,        - movwf   VRCON
+,,,        bank0
+000001DB,1000,,        - bcf     STATUS,RP0
+000001DC,1000,,        - bcf     STATUS,RP1
+000001DD,22AC,,        CALL    delay5
+000001DE,1800,,        BTFSC   CMCON,C2OUT
+000001DF,29E3,,        GOTO    $+4
+000001E0,3002,,        MOVLW   .2
+000001E1,00D5,,        MOVWF   LPG_LEVEL
+000001E2,29E5,,        GOTO    LEVL
+,,,
+000001E3,3001,,        MOVLW   .1
+000001E4,00D5,,        MOVWF   LPG_LEVEL
+,,,
+,,,
+000001E5,,LEVL,LEVL
+,,,
+,,,
+000001E5,0B55,,        DECFSZ  LPG_LEVEL,W
+000001E6,29EC,,        GOTO    $+6
+000001E7,1DD4,,        BTFSS   BLINK,3 ; РЕГИСТР МОРГАНИЯ
+000001E8,29EC,,        GOTO    $+4
+000001E9,3020,,        MOVLW   20      ; ОЧИЩАЕМ ЗНАКОМЕСТА
+000001EA,231B,,        CALL    sch_b
+000001EB,286A,,        GOTO    CC
+,,,
+,,,
+,,,
+,,,
+,,,;       MOVLW   30
+,,,;       ADDWF   LPG_LEVEL,W
+,,,;       call    sch_b
+000001EC,3005,,        MOVLW   05H
+000001ED,231B,,        CALL    sch_b
+000001EE,23A7,,        CALL    LPG_CHAR
+,,,;       CALL    DELAY
+,,,
+000001EF,286A,,        GOTO CC
+,,,;=============================================================
+,,,;       TMR 0
+,,,;=============================================================
+000001F0,1000,TMR_EV,TMR_EV  BCF     INTCON,T0IF             ; Сброс флага прерывания
+,,,
+000001F1,0826,,        MOVF    ERR,W
+000001F2,3930,,        ANDLW   B'00110000'
+000001F3,1800,,        BTFSC   STATUS,Z
+000001F4,29F8,,        GOTO    $+4
+000001F5,1DD4,,        BTFSS   BLINK,3
+000001F6,29FA,,        GOTO    $+4
+000001F7,29FD,,        GOTO    $+6
+,,,
+,,,; Регулировка яркости
+000001F8,1FCD,,        BTFSS   FLAG2,7;CMCON,C1OUT
+000001F9,29FD,,        GOTO    $+4
+000001FA,1E00,,        BTFSS   BRIGHT
+000001FB,1600,,        BSF     BRIGHT
+000001FC,29FF,,        GOTO    $+3
+000001FD,1A00,,        BTFSC   BRIGHT
+000001FE,1200,,        BCF     BRIGHT
+,,,
+000001FF,03D4,,        DECF    BLINK,F
+,,,
+00000200,0BD0,,        DECFSZ  IN_CNT,F                ; Счётчик приёма
+00000201,2810,,        GOTO    RET
+00000202,10CD,,        BCF     FLAG2,1   ; CLRF        FLAG2 заменим на изменение соответсвующего флага
+,,,
+00000203,2A9D,,        GOTO    CHSM_ERR
+,,,
+,,,
+,,,
+,,,
+,,,; =============================================================
+,,,;       Приём данных с COM-порта
+,,,;==============================================================
+00000204,1000,Int_Rx,Int_Rx  BCF     PIR1,RCIF
+,,,
+00000205,0800,,        Movfw   RCREG
+,,,;       MOVWF   TXREG
+,,,;       bank1
+,,,;       BTFSS           TXSTA,TRMT              ; ПЕРЕДАЧА
+,,,;       GOTO             $-1            ; ДАННЫХ
+,,,;       bank0
+,,,
+,,,
+,,,
+00000206,19CC,,        BTFSC   FLAG,3          ; Привём данных
+00000207,2A33,,        GOTO    READ_DATA
+00000208,194C,,        BTFSC   FLAG,2          ;
+00000209,2A26,,        GOTO    GET_SIZE
+0000020A,18CC,,        BTFSC   FLAG,1
+0000020B,2A1E,,        GOTO    GET_VERSION
+0000020C,184C,,        BTFSC   FLAG,0
+0000020D,2A16,,        GOTO    NUL
+0000020E,0ACF,,        INCF    BT_CNT,F
+0000020F,0800,,        Movfw   RCREG           ; проверка на байт синхронизации
+00000210,07D1,,        ADDWF   CHK_SUM_RX,F    ; считаем контрольную сумму
+00000211,3AAF,,        XORLW   0AFH
+00000212,1C00,,        BTFSS   STATUS,Z
+00000213,2A9D,,        GOTO    CHSM_ERR
+00000214,144C,,        BSF     FLAG,0
+00000215,2810,,        GOTO    RET
+,,,
+00000216,0800,NUL,NUL     Movfw   RCREG           ; ПРОВЕРЯЕМ ВТОРОЙ БАЙТ ПАКЕТА
+00000217,07D1,,        ADDWF   CHK_SUM_RX,F    ; считаем контрольную сумму
+00000218,3A01,,        XORLW   01H
+00000219,1C00,,        BTFSS   STATUS,Z
+0000021A,2A9D,,        GOTO    CHSM_ERR
+0000021B,0ACF,,        INCF    BT_CNT,F
+0000021C,14CC,,        BSF     FLAG,1
+0000021D,2810,,        GOTO    RET
+,,,
+,,,
+0000021E,0800,GET_VERSION,GET_VERSION     Movfw   RCREG
+0000021F,07D1,,        ADDWF   CHK_SUM_RX,F    ; считаем контрольную сумму
+,,,
+00000220,3C10,,        SUBLW   VERSION
+00000221,1C00,,        BTFSS   STATUS,Z
+00000222,2A9D,,        GOTO    CHSM_ERR
+,,,
+00000223,0ACF,,        INCF    BT_CNT,F
+00000224,154C,,        BSF     FLAG,2
+00000225,2810,,        GOTO    RET
+,,,
+00000226,0800,GET_SIZE,GET_SIZE        Movfw   RCREG
+00000227,07D1,,        ADDWF   CHK_SUM_RX,F    ; считаем контрольную сумму
+00000228,00CE,,        MOVWF   SIZE
+00000229,3C40,,        SUBLW   .64             ; ОГРАНИЧЕНИЕ НА МАКСИМАЛЬНУЮ ДЛИННУ ПАКЕТА
+0000022A,1C00,,        BTFSS   STATUS,C
+0000022B,2A9D,,        GOTO    CHSM_ERR
+0000022C,3005,,        MOVLW   .5              ; ПРОВЕРКА НА МИНИМАЛЬНЫЙ РАЗМЕР ПАКЕТА
+0000022D,024E,,        SUBWF   SIZE,W
+0000022E,1C00,,        BTFSS   STATUS,C
+0000022F,2A9D,,        GOTO    CHSM_ERR
+,,,
+,,,
+,,,
+00000230,0ACF,,        INCF    BT_CNT,F
+,,,
+00000231,15CC,,        BSF     FLAG,3
+00000232,2810,,        GOTO    RET
+,,,
+00000233,0ACF,READ_DATA,READ_DATA       INCF    BT_CNT,F
+00000234,084F,,        MOVF    BT_CNT,W                ; КОЛИЧЕСТВО БАЙТ В ПАКЕТЕ +1
+00000235,064E,,        XORWF   SIZE,W          ;
+00000236,1800,,        BTFSC   STATUS,Z                ; ПРОВЕРЯЕМ НА ПЕРЕПОЛНЕНИЕ
+00000237,2A47,,        GOTO    CHK_SUM         ; ОБНУЛЕНИЕ СЧЁТЧИКА И КОНТРОЛЬНОЙ СУММЫ
+,,,
+,,,
+,,,        movab   BT_CNT,FSR              ; ЗАГРУЖАЕМ СЧЁТЧИК БАЙТ В РЕГИСТР КОСВЕННОЙ АДРЕСАЦИИ
+00000238,084F,,        - movfw   BT_CNT
+00000239,0080,,        - movwf   FSR
+0000023A,30A0,,        MOVLW   0A0H            ; Добавляем начало блока переменных
+0000023B,0780,,        ADDWF   FSR,F           ; Приращаем FSR на начальное значение
+0000023C,0800,,        Movfw   RCREG
+0000023D,07D1,,        ADDWF   CHK_SUM_RX,F    ; считаем контрольную сумму
+,,,        bank1
+0000023E,1400,,        - bsf     STATUS,RP0
+0000023F,1000,,        - bcf     STATUS,RP1
+00000240,0080,,        MOVWF   INDF            ; Сохраняем во временный буфер памяти
+,,,        bank0
+00000241,1000,,        - bcf     STATUS,RP0
+00000242,1000,,        - bcf     STATUS,RP1
+,,,
+,,,        let     IN_CNT,0FFH             ;СЧЁТЧИК ПРИЁМА
+00000243,30FF,,        - movlw   0FFH
+00000244,00D0,,        - movwf   IN_CNT
+00000245,144D,,        BSF     FLAG2,0
+,,,
+00000246,2810,,        GOTO    RET
+,,,; Проверяем контрольную сумму
+00000247,0800,CHK_SUM,CHK_SUM Movfw   RCREG
+00000248,0651,,        XORWF   CHK_SUM_RX,W
+00000249,1C00,,        BTFSS   STATUS,Z
+0000024A,2A9D,,        GOTO    CHSM_ERR
+0000024B,154D,,        BSF     FLAG2,2
+0000024C,14CD,,        BSF     FLAG2,1  ;Флаг принятых данных
+,,,        let     IN_CNT,0FFH
+0000024D,30FF,,        - movlw   0FFH
+0000024E,00D0,,        - movwf   IN_CNT
+,,,; Копируем данные в рабочие регистры
+,,,        bank1
+0000024F,1400,,        - bsf     STATUS,RP0
+00000250,1000,,        - bcf     STATUS,RP1
+00000251,0825,,        Movfw   STAT
+,,,        bank0
+00000252,1000,,        - bcf     STATUS,RP0
+00000253,1000,,        - bcf     STATUS,RP1
+00000254,00A5,,        MOVWF   STAT
+,,,        bank1
+00000255,1400,,        - bsf     STATUS,RP0
+00000256,1000,,        - bcf     STATUS,RP1
+00000257,0826,,        Movfw   ERR
+,,,        bank0
+00000258,1000,,        - bcf     STATUS,RP0
+00000259,1000,,        - bcf     STATUS,RP1
+0000025A,00A6,,        MOVWF   ERR
+,,,        bank1
+0000025B,1400,,        - bsf     STATUS,RP0
+0000025C,1000,,        - bcf     STATUS,RP1
+0000025D,0828,,        Movfw   A_TMP
+,,,        bank0
+0000025E,1000,,        - bcf     STATUS,RP0
+0000025F,1000,,        - bcf     STATUS,RP1
+00000260,00A8,,        MOVWF   A_TMP
+,,,        bank1
+00000261,1400,,        - bsf     STATUS,RP0
+00000262,1000,,        - bcf     STATUS,RP1
+00000263,0829,,        Movfw   COLT
+,,,        bank0
+00000264,1000,,        - bcf     STATUS,RP0
+00000265,1000,,        - bcf     STATUS,RP1
+00000266,00A9,,        MOVWF   COLT
+,,,        bank1
+00000267,1400,,        - bsf     STATUS,RP0
+00000268,1000,,        - bcf     STATUS,RP1
+00000269,082E,,        Movfw   SPD
+,,,        bank0
+0000026A,1000,,        - bcf     STATUS,RP0
+0000026B,1000,,        - bcf     STATUS,RP1
+0000026C,00AE,,        MOVWF   SPD
+,,,        bank1
+0000026D,1400,,        - bsf     STATUS,RP0
+0000026E,1000,,        - bcf     STATUS,RP1
+0000026F,082A,,        Movfw   MAP
+,,,        bank0
+00000270,1000,,        - bcf     STATUS,RP0
+00000271,1000,,        - bcf     STATUS,RP1
+00000272,00AA,,        MOVWF   MAP
+,,,        bank1
+00000273,1400,,        - bsf     STATUS,RP0
+00000274,1000,,        - bcf     STATUS,RP1
+00000275,0827,,        Movfw   STPCNT
+,,,        bank0
+00000276,1000,,        - bcf     STATUS,RP0
+00000277,1000,,        - bcf     STATUS,RP1
+00000278,00A7,,        MOVWF   STPCNT
+,,,        bank1
+00000279,1400,,        - bsf     STATUS,RP0
+0000027A,1000,,        - bcf     STATUS,RP1
+0000027B,082C,,        Movfw   O2S
+,,,        bank0
+0000027C,1000,,        - bcf     STATUS,RP0
+0000027D,1000,,        - bcf     STATUS,RP1
+0000027E,00AC,,        MOVWF   O2S
+,,,        bank1
+0000027F,1400,,        - bsf     STATUS,RP0
+00000280,1000,,        - bcf     STATUS,RP1
+00000281,082D,,        Movfw   POWER
+,,,        bank0
+00000282,1000,,        - bcf     STATUS,RP0
+00000283,1000,,        - bcf     STATUS,RP1
+00000284,00AD,,        MOVWF   POWER
+,,,        bank1
+00000285,1400,,        - bsf     STATUS,RP0
+00000286,1000,,        - bcf     STATUS,RP1
+00000287,082F,,        Movfw   T_INJ_L
+,,,        bank0
+00000288,1000,,        - bcf     STATUS,RP0
+00000289,1000,,        - bcf     STATUS,RP1
+0000028A,00AF,,        MOVWF   T_INJ_L
+,,,        bank1
+0000028B,1400,,        - bsf     STATUS,RP0
+0000028C,1000,,        - bcf     STATUS,RP1
+0000028D,0830,,        Movfw   T_INJ_H
+,,,        bank0
+0000028E,1000,,        - bcf     STATUS,RP0
+0000028F,1000,,        - bcf     STATUS,RP1
+00000290,00B0,,        MOVWF   T_INJ_H
+,,,        bank1
+00000291,1400,,        - bsf     STATUS,RP0
+00000292,1000,,        - bcf     STATUS,RP1
+00000293,0842,,        Movfw   MCKl
+,,,        bank0
+00000294,1000,,        - bcf     STATUS,RP0
+00000295,1000,,        - bcf     STATUS,RP1
+00000296,00C2,,        MOVWF   MCKl
+,,,        bank1
+00000297,1400,,        - bsf     STATUS,RP0
+00000298,1000,,        - bcf     STATUS,RP1
+00000299,0843,,        Movfw   MCKh
+,,,        bank0
+0000029A,1000,,        - bcf     STATUS,RP0
+0000029B,1000,,        - bcf     STATUS,RP1
+0000029C,00C3,,        MOVWF   MCKh
+,,,
+0000029D,,CHSM_ERR,CHSM_ERR
+0000029D,01CC,,        CLRF    FLAG
+0000029E,01D1,,        CLRF    CHK_SUM_RX
+0000029F,01CF,,        CLRF    BT_CNT
+000002A0,2810,,        GOTO    RET
+,,,;=======================================================================================
+000002A1,0849,READ_STR,READ_STR        MOVF    temp2,W         ; Чтение таблицы DT
+000002A2,0080,,        MOVWF   PCL
+,,,
+,,,
+000002A3,3010,delay20,delay20 MOVLW   10
+000002A4,00D6,,        MOVWF   cnt1
+000002A5,01D7,,        CLRF    cnt2
+000002A6,0064,,        CLRWDT
+000002A7,0BD7,,        DECFSZ  cnt2,f
+000002A8,2AAA,,        GOTO    $+2
+000002A9,0BD6,,        DECFSZ  cnt1,f
+000002AA,2AA6,,        GOTO    $-4
+000002AB,0008,,        RETURN
+,,,
+000002AC,0064,delay5,delay5  CLRWDT
+000002AD,3004,,        MOVLW   4
+000002AE,00D6,,        MOVWF   cnt1
+000002AF,01D7,,        CLRF    cnt2
+000002B0,0BD7,,        DECFSZ  cnt2,f
+000002B1,2AB3,,        GOTO    $+2
+000002B2,0BD6,,        DECFSZ  cnt1,f
+000002B3,2AB0,,        GOTO    $-3
+000002B4,0000,,        NOP
+000002B5,0008,,        RETURN
+,,,
+000002B6,30FF,DELAY,DELAY   MOVLW   .255
+000002B7,00D6,,        MOVWF   cnt1
+000002B8,01D7,,        CLRF    cnt2
+000002B9,0BD7,,        DECFSZ  cnt2,f
+000002BA,2ABD,,        GOTO    $+3
+000002BB,0064,,        CLRWDT
+000002BC,0BD6,,        DECFSZ  cnt1,f
+000002BD,2AB9,,        GOTO    $-4
+000002BE,0008,,        RETURN
+,,,
+,,,d100mks let temp2,.25
+000002BF,3019,,        - movlw   .25
+000002C0,00C9,,        - movwf   temp2
+000002C1,0000,dll,dll     NOP                     ;4 x 50 = 100 mkc
+000002C2,0BC9,,        DECFSZ temp2,f
+000002C3,2AC1,,        GOTO dll
+000002C4,0008,,        RETURN
+,,,
+,,,;****************************************************
+,,,; Преобразование двухбайтного числа в десятичное
+,,,;****************************************************
+000002C5,1000,BCD16,BCD16           BCF     STATUS,0
+000002C6,3010,,        MOVLW   .16
+000002C7,00DC,,        MOVWF   count
+000002C8,01D9,,        CLRF    rab1
+000002C9,01DA,,        CLRF    rab2
+000002CA,01DB,,        CLRF    rab3
+000002CB,0DDD,loop16,loop16          RLF     aargb2, F
+000002CC,0DDE,,        RLF     aargb1, F
+000002CD,0DDB,,        RLF     rab3, F
+000002CE,0DDA,,        RLF     rab2, F
+000002CF,0DD9,,        RLF     rab1, F
+000002D0,0BDC,,        DECFSZ  count, F
+000002D1,2AE1,,        GOTO    adjDEC
+,,,
+000002D2,085A,sw,sw      Movfw   rab2            ; добавил распаковку тысяч
+000002D3,39F0,,        ANDLW   0F0
+000002D4,00D8,,        MOVWF   rab0
+000002D5,0ED8,,        SWAPF   rab0,f
+,,,
+000002D6,085A,,        Movfw   rab2            ; Распаковка BCD
+000002D7,390F,,        ANDLW   0F
+000002D8,00D9,,        MOVWF   rab1
+000002D9,085B,,        Movfw   rab3
+000002DA,39F0,,        ANDLW   0F0
+000002DB,00DA,,        MOVWF   rab2
+000002DC,0EDA,,        SWAPF   rab2,f
+000002DD,085B,,        Movfw   rab3
+000002DE,390F,,        ANDLW   0F
+000002DF,00DB,,        MOVWF   rab3
+000002E0,3400,,        RETLW   0
+,,,
+000002E1,305B,adjDEC,adjDEC          MOVLW   rab3
+000002E2,0080,,        MOVWF   FSR
+000002E3,22EB,,        CALL    adjBCD
+000002E4,305A,,        MOVLW   rab2
+000002E5,0080,,        MOVWF   FSR
+000002E6,22EB,,        CALL    adjBCD
+000002E7,3059,,        MOVLW   rab1
+000002E8,0080,,        MOVWF   FSR
+000002E9,22EB,,        CALL    adjBCD
+000002EA,2ACB,,        GOTO    loop16
+000002EB,3003,adjBCD,adjBCD          MOVLW   3
+000002EC,0700,,        ADDWF   0,W
+000002ED,00DF,,        MOVWF   temp
+000002EE,19DF,,        BTFSC   temp,3          ; test if result > 7
+000002EF,0080,,        MOVWF   0
+000002F0,3030,,        MOVLW   30
+000002F1,0700,,        ADDWF   0,W
+000002F2,00DF,,        MOVWF   temp
+000002F3,1BDF,,        BTFSC   temp,7          ; test if result > 7
+000002F4,0080,,        MOVWF   0               ; save as MSD
+000002F5,3400,,        RETLW   0
+,,,
+,,,
+,,,
+,,,;-----------------------------------------------------------------------
+,,,;           Библиотека символов знакогенератора и сообщений
+,,,;-----------------------------------------------------------------------
+,,,        #include MUL8X8.ASM
+,,,SAME    EQU             1
+,,,
+,,,MULT    MACRO   BIT
+,,,        BTFSC   MULp,BIT
+,,,        ADDWF   H_byte,SAME
+,,,        RRF     H_byte,SAME
+,,,        RRF     L_byte,SAME
+,,,        ENDM
+,,,
+000002F6,01E2,MUL8,MUL8    CLRF    H_byte
+000002F7,01E3,,        CLRF    L_byte
+000002F8,0860,,        MOVF    MULc,W
+000002F9,1000,,        BCF     STATUS,C
+,,,        MULT    0
+000002FA,1861,,        - BTFSC   MULp,0
+000002FB,07E2,,        - ADDWF   H_byte,SAME
+000002FC,0CE2,,        - RRF     H_byte,SAME
+000002FD,0CE3,,        - RRF     L_byte,SAME
+,,,        MULT    1
+000002FE,18E1,,        - BTFSC   MULp,1
+000002FF,07E2,,        - ADDWF   H_byte,SAME
+00000300,0CE2,,        - RRF     H_byte,SAME
+00000301,0CE3,,        - RRF     L_byte,SAME
+,,,        MULT    2
+00000302,1961,,        - BTFSC   MULp,2
+00000303,07E2,,        - ADDWF   H_byte,SAME
+00000304,0CE2,,        - RRF     H_byte,SAME
+00000305,0CE3,,        - RRF     L_byte,SAME
+,,,        MULT    3
+00000306,19E1,,        - BTFSC   MULp,3
+00000307,07E2,,        - ADDWF   H_byte,SAME
+00000308,0CE2,,        - RRF     H_byte,SAME
+00000309,0CE3,,        - RRF     L_byte,SAME
+,,,        MULT    4
+0000030A,1A61,,        - BTFSC   MULp,4
+0000030B,07E2,,        - ADDWF   H_byte,SAME
+0000030C,0CE2,,        - RRF     H_byte,SAME
+0000030D,0CE3,,        - RRF     L_byte,SAME
+,,,        MULT    5
+0000030E,1AE1,,        - BTFSC   MULp,5
+0000030F,07E2,,        - ADDWF   H_byte,SAME
+00000310,0CE2,,        - RRF     H_byte,SAME
+00000311,0CE3,,        - RRF     L_byte,SAME
+,,,        MULT    6
+00000312,1B61,,        - BTFSC   MULp,6
+00000313,07E2,,        - ADDWF   H_byte,SAME
+00000314,0CE2,,        - RRF     H_byte,SAME
+00000315,0CE3,,        - RRF     L_byte,SAME
+,,,        MULT    7
+00000316,1BE1,,        - BTFSC   MULp,7
+00000317,07E2,,        - ADDWF   H_byte,SAME
+00000318,0CE2,,        - RRF     H_byte,SAME
+00000319,0CE3,,        - RRF     L_byte,SAME
+,,,
+0000031A,3400,,        RETLW   0
+,,,;       #include lcdrout.inc
+,,,        #include lcdslow.inc ; Вариант с увеличенными задержками между состояниями линий
+,,,;**************************************************************
+,,,; The LCD Module Subroutines
+,,,;**************************************************************
+,,,
+,,,;**************************************************************
+,,,;*SendChar - Sends character to LCD
+,,,;*This routine splits the character into the upper and lower
+,,,;*nibbles and sends them to the LCD, upper nibble first.
+,,,;**************************************************************
+,,,;
+,,,; LCD Module commands
+,,,; ===================
+,,,LINE1          EQU  0x080   ; Set display to line 1 character 0
+,,,LINE2          EQU  0x0C0   ; Set display to line 2 character 0
+,,,
+,,,FUNCTION_SET   EQU  0x028   ; 4 bits, 2 lines, 5x7 Font
+,,,
+,,,;CLR_DISP - clears all display, and cursor home to addr 0
+,,,CLR_DISP       EQU  0x001   ; Clear the Display
+,,,
+,,,;RTN_HOME - cursor home and display unshifted, DDRAM unchanged
+,,,RTN_HOME    EQU    0X002
+,,,
+,,,;DISP_... - Display on / off control, C = cursor ON, B = chr pos blink
+,,,DISP_ON        EQU  0x00C   ; Display on
+,,,DISP_ON_C      EQU  0x00E   ; Display on, Cursor on
+,,,DISP_ON_B      EQU  0x00F   ; Display on, Cursor on, Blink cursor
+,,,DISP_OFF       EQU  0x008   ; Display off
+,,,
+,,,;ENTRY_... - sets entry mode, S = display shift on, INC / DEC cursor move dir
+,,,ENTRY_INC      EQU  0x006   ;
+,,,ENTRY_INC_S    EQU  0x007   ;
+,,,ENTRY_DEC      EQU  0x004   ;
+,,,ENTRY_DEC_S    EQU  0x005   ;
+,,,
+,,,;SHIFT_. - Cursor & Display shift, S = Display, C = cursor, L = Left, R = Right
+,,,SHIFT_C_L     EQU  0x010
+,,,SHIFT_C_R     EQU  0x014
+,,,SHIFT_S_L     EQU  0x018
+,,,SHIFT_S_R     EQU  0x01C
+,,,
+,,,DD_RAM_ADDR    EQU  0x080   ; Least Significant 7-bit are for address
+,,,DD_RAM_UL      EQU  0x080   ; Upper Left coner of the Display
+,,,
+,,,
+,,,
+,,,
+,,,;==============================================================
+0000031B,,sch_b,sch_b
+0000031B,,Send_Char,Send_Char
+0000031B,00C7,,        movwf   Char            ; Character to be sent is in W
+0000031C,234D,,        call    Wait_Busy       ; Wait for LCD to be ready
+0000031D,300F,,        movlw   0x0f
+0000031E,0580,,        andwf   LCD_DATA,F      ; Clear the upper nibble
+0000031F,0847,,        movf    Char,w
+00000320,39F0,,        andlw   0xF0            ; Get upper nibble
+00000321,0480,,        iorwf   LCD_DATA,F      ; Send data to LCD
+00000322,0000,,           NOP
+00000323,1100,,        bcf     RW              ; Set LCD to write
+00000324,0000,,           NOP
+00000325,1580,,        bsf     RS              ; Set LCD to data mode
+00000326,0000,,           NOP
+00000327,1580,,        bsf     E               ; toggle E for LCD
+00000328,0000,,           NOP
+00000329,1180,,        bcf     E
+0000032A,300F,,        movlw   0x0f
+0000032B,0580,,        andwf   LCD_DATA,F      ; Clear the upper nibble
+0000032C,0E47,,        swapf   Char,W
+0000032D,39F0,,        andlw   0xF0            ; Get lower nibble
+0000032E,0480,,        iorwf   LCD_DATA,F      ; Send data to LCD
+0000032F,0000,,           NOP
+00000330,1580,,        bsf     E               ; toggle E for LCD
+00000331,0000,,           NOP
+00000332,1180,,        bcf     E
+00000333,0008,,        return
+,,,
+,,,;**************************************************************
+,,,;* Send_Cmd - Sends command to LCD
+,,,;* This routine splits the command into the upper and lower
+,,,;* nibbles and sends them to the LCD, upper nibble first.
+,,,;**************************************************************
+00000334,,scmd,scmd
+00000334,,Send_Cmd,Send_Cmd
+00000334,00C7,,        movwf   Char            ; Character to be sent is in W
+00000335,234D,,        call    Wait_Busy       ; Wait for LCD to be ready
+00000336,300F,,        movlw   0x0f
+00000337,0580,,        andwf   LCD_DATA,F      ; Clear the upper nibble
+00000338,0847,,        movf    Char,w
+00000339,39F0,,        andlw   0xF0            ; Get upper nibble
+0000033A,0480,,        iorwf   LCD_DATA,F      ; Send data to LCD
+0000033B,0000,,           NOP
+0000033C,1100,,        bcf     RW    ; Set LCD to write
+0000033D,0000,,           NOP
+0000033E,1180,,        bcf     RS     ; Set LCD to command mode
+0000033F,0000,,           NOP
+00000340,1580,,        bsf     E      ; toggle E for LCD
+00000341,0000,,           NOP
+00000342,1180,,        bcf     E
+00000343,300F,,        movlw   0x0f
+00000344,0580,,        andwf   LCD_DATA,F      ; Clear the upper nibble
+00000345,0E47,,        swapf   Char,W
+00000346,39F0,,        andlw   0xF0            ; Get lower nibble
+00000347,0480,,        iorwf   LCD_DATA,F      ; Send data to LCD
+00000348,0000,,           NOP
+00000349,1580,,        bsf     E      ; toggle E for LCD
+0000034A,0000,,           NOP
+0000034B,1180,,        bcf     E
+0000034C,0008,,        return
+,,,
+,,,;**************************************************************
+,,,;* This routine checks the busy flag, returns when not busy
+,,,;*  Affects:
+,,,;*      Temp - Returned with busy/address
+,,,;**************************************************************
+,,,
+0000034D,,Wait_Busy,Wait_Busy
+0000034D,1400,,        bsf     STATUS, RP0     ; Select Register page 1
+0000034E,30F0,,        movlw   0xf0            ; Set port to input
+0000034F,0400,,        iorwf   LCD_DATA_TRIS,W ; Only set upper half of port
+00000350,0000,,           NOP
+00000351,0080,,        movwf   LCD_DATA_TRIS
+00000352,1000,,        bcf     STATUS, RP0     ; Select Register page 0
+00000353,1180,,        bcf     RS              ; Set LCD for Command mode
+00000354,0000,,           NOP
+00000355,1500,,        bsf     RW              ; Setup to read busy flag
+00000356,0000,,           NOP
+00000357,1580,,        bsf     E               ; Set E high
+00000358,0000,,           NOP
+00000359,0800,,        movf    LCD_DATA, W     ; Read upper nibble busy flag, DDRam address
+0000035A,0000,,           NOP
+0000035B,1180,,        bcf     E               ; Set E low
+0000035C,39F0,,        andlw   0xF0            ; Mask out lower nibble
+0000035D,00C6,,        movwf   Temp
+0000035E,1580,,        bsf     E               ; Toggle E to get lower nibble
+0000035F,0000,,           NOP
+00000360,0E00,,        swapf   LCD_DATA, w     ; Read lower nibble busy flag, DDRam address
+00000361,1180,,        bcf     E
+00000362,390F,,        andlw   0x0F            ; Mask out upper nibble
+00000363,04C6,,        iorwf   Temp,f          ; Combine nibbles, RES in Temp !!!!!!!!!!!!!!!
+00000364,1BC6,,        btfsc   Temp, 7         ; Check busy flag, high = busy
+00000365,2B4D,,        goto    Wait_Busy       ; If busy, check again
+00000366,1100,,        bcf     RW
+00000367,1400,,        bsf     STATUS, RP0     ; Select Register page 1
+00000368,300F,,        movlw   0x0F
+00000369,0500,,        andwf   LCD_DATA_TRIS,W
+0000036A,0080,,        movwf   LCD_DATA_TRIS   ; Set Port for output
+0000036B,1000,,        bcf     STATUS, RP0     ; Select Register page 0
+0000036C,0008,,        return
+,,,
+,,,;**************************************************************
+0000036D,,del10mks,del10mks
+0000036D,2B6E,,        goto $+1
+0000036E,2B6F,,        goto $+1
+0000036F,2B70,,        goto $+1
+00000370,2B71,,        goto $+1
+00000371,2B72,,        goto $+1
+00000372,2B73,,        goto $+1
+00000373,2B74,,        goto $+1
+00000374,2B75,,        goto $+1
+00000375,2B76,,        goto $+1
+00000376,0008,,        return
+,,,;**************************************************************
+,,,; Initilize the LCD Display Module
+,,,;**************************************************************
+00000377,,LCD_Init:,LCD_Init:
+,,,
+00000377,1180,,        bcf     E     ; Clear all controll lines
+00000378,1180,,        bcf     RS
+00000379,1100,,        bcf     RW
+0000037A,22A3,,        call    delay20         ; Wait for 40ms for LCD to get powered up
+0000037B,22A3,,        call    delay20
+0000037C,300F,,        movlw   0x0f
+0000037D,0580,,        andwf   LCD_DATA,F      ; Clear the upper nibble
+0000037E,3030,,        movlw   0x030           ; Command for 4-bit interface high nibble
+0000037F,0480,,        iorwf   LCD_DATA,F      ; Send data to LCD
+00000380,1400,,        bsf     STATUS, RP0     ; Select Register page 1
+00000381,300F,,        movlw   0x0F
+00000382,0500,,        andwf   LCD_DATA_TRIS,W
+00000383,0080,,        movwf   LCD_DATA_TRIS   ; Set Port for output
+00000384,1000,,        BCF     STATUS, RP0     ; Select Register page 0
+00000385,1580,,        bsf     E               ; Clock the initalize command to LCD module
+00000386,1180,,        bcf     E
+00000387,22AC,,        call    delay5          ; Delay for at least 4.1ms before continuing
+00000388,1580,,        bsf     E               ; Clock the initalize command to LCD module
+00000389,1180,,        bcf     E
+0000038A,22BF,,        call    d100mks         ; delay for at least 100usec before continuing
+0000038B,1580,,        bsf     E               ; Clock the initalize command to LCD module
+0000038C,1180,,        bcf     E
+0000038D,234D,,        call    Wait_Busy       ; From here on, the Busy Bit will be valid.
+0000038E,300F,,        movlw   0x0f
+0000038F,0580,,        andwf   LCD_DATA,F      ; Clear the upper nibble
+00000390,3020,,        movlw   0x020           ; Command for 4-bit interface high nibble
+00000391,0480,,        iorwf   LCD_DATA,F      ; Send data to LCD
+00000392,1580,,        bsf     E               ; Clock the initalize command to LCD module
+00000393,1180,,        bcf     E
+00000394,3028,,        movlw   FUNCTION_SET    ; Send the function set command 4-bit I/F, Font, Number of lines
+00000395,2334,,        call    Send_Cmd        ; Can now use the Send_Cmd routine since Busy Bit Valid and in 4bit mode
+,,,
+,,,
+,,,
+00000396,0008,,        return
+,,,; Программирование символов для изображения линейки
+00000397,3040,SET_CGRAM,SET_CGRAM       movlw   40      ; Установка начального адреса CGRAM
+00000398,2334,,        call    Send_Cmd
+,,,
+,,,
+,,,
+,,,        let     temp1,.64
+00000399,3040,,        - movlw   .64
+0000039A,00C8,,        - movwf   temp1
+0000039B,3004,,        MOVLW   HIGH SYM_DOT
+0000039C,0080,,        MOVWF   PCLATH
+0000039D,301F,,        MOVLW   LOW SYM_DOT
+0000039E,00C9,,        MOVWF   temp2
+0000039F,22A1,,        CALL    READ_STR
+000003A0,231B,,        CALL    sch_b
+000003A1,0AC9,,        INCF    temp2,F
+000003A2,0BC8,,        DECFSZ  temp1,F
+000003A3,2B9F,,        GOTO    $-4
+,,,
+,,,
+000003A4,3080,,        movlw   80      ; Процедура DDRAM SET
+000003A5,2334,,        call    Send_Cmd
+000003A6,0008,,        return
+,,,
+000003A7,3068,LPG_CHAR,LPG_CHAR        movlw   40+.40  ; Установка начального адреса CGRAM
+000003A8,2334,,        call    Send_Cmd
+,,,
+000003A9,0855,,        MOVF    LPG_LEVEL,W     ;LPG_LEVE=0
+000003AA,1C00,,        BTFSS   STATUS,Z
+000003AB,2BB8,,        GOTO    LCHR
+,,,        let     temp1,.8        ; РИСУЕМ ЗНАК ОБРЫВА ДАТЧИКА
+000003AC,3008,,        - movlw   .8
+000003AD,00C8,,        - movwf   temp1
+000003AE,3004,,        MOVLW   HIGH SYM_F_ER
+000003AF,0080,,        MOVWF   PCLATH
+000003B0,305F,,        MOVLW   LOW SYM_F_ER
+000003B1,00C9,,        MOVWF   temp2
+000003B2,22A1,,        CALL    READ_STR
+000003B3,231B,,        CALL    sch_b
+000003B4,0AC9,,        INCF    temp2,F
+000003B5,0BC8,,        DECFSZ  temp1,F
+000003B6,2BB2,,        GOTO    $-4
+000003B7,0008,,        RETURN
+,,,
+,,,
+000003B8,308E,LCHR,LCHR    MOVLW   .142
+000003B9,231B,,        CALL    sch_b
+000003BA,309F,,        MOVLW   .159
+000003BB,231B,,        CALL    sch_b
+,,,
+,,,;       let LPG_LEVEL,4
+,,,
+000003BC,3005,,        MOVLW   .5
+000003BD,00C8,,        MOVWF   temp1
+000003BE,0855,MCH,MCH     MOVFW   LPG_LEVEL
+000003BF,0248,,        SUBWF   temp1,W
+000003C0,1C00,,        BTFSS   STATUS,C
+000003C1,1800,,        BTFSC   STATUS,Z
+000003C2,2BC5,,        GOTO    $+3
+000003C3,309F,,        MOVLW   .159
+000003C4,2BC6,,        GOTO    $+2
+000003C5,3091,,        MOVLW   .145
+000003C6,231B,,        CALL    sch_b
+000003C7,0BC8,,        DECFSZ  temp1,F
+000003C8,2BBE,,        GOTO    MCH
+000003C9,309F,,        MOVLW   .159
+000003CA,231B,,        CALL    sch_b
+000003CB,3080,,        movlw   80      ; Процедура DDRAM SET
+000003CC,2334,,        call    Send_Cmd
+000003CD,0008,,        RETURN
+,,,
+000003CE,3070,LAMBDA_CHAR,LAMBDA_CHAR     movlw   40+.48  ; Установка начального адреса CGRAM
+000003CF,2334,,        call    Send_Cmd
+,,,
+000003D0,3080,,        movlw   80      ; Процедура DDRAM SET
+000003D1,2334,,        call    Send_Cmd
+000003D2,0008,,        RETURN
+,,,        ORG     400
+00000400,3420 34AF 3443,LOGO,LOGO    DT      20, 0AFH,"C", 0A9H, 0E0H,20,"WEGA",20,"2015",20
+00000410,3420 346E 346F,N_CON,N_CON   DT      20,"not connection"
+,,,; CGRAM
+0000041F,3480 3480 348C,SYM_DOT,SYM_DOT DT      .128,.128,.140,.158,.158,.140,.128,.128 ; 00H Символ ХХ (точка)
+00000427,3480 3484 348E,SYM_O,SYM_O   DT      .128,.132,.142,.145,.145,.142,.132,.128 ; 01H Символ рабочего режима (кружок)
+0000042F,348E 349F 349B,SYM_BO,SYM_BO  DT      .142,.159,.155,.145,.145,.155,.159,.142 ; 02H
+00000437,3480 349F 3480,SYM_L,SYM_L   DT      .128,.159,.128,.159,.128,.159,.128,.128 ; 03H
+0000043F,348C 3492 3492,SYM_DEG,SYM_DEG DT      .140,.146,.146,.140,.128,.128,.128,.128 ; 04H Знак градуса
+00000447,348E 349F 3491,SYM_FUEL,SYM_FUEL        DT      .142,.159,.145,.145,.145,.145,.145,.159 ; Уровень топлива
+0000044F,3480 3480 3480,SYM_LAMBD,SYM_LAMBD       DT      .128,.128,.128,.159,.159,.128,.128,.128 ; Указатель лямбда-зонда
+00000457,3480 3480 3480,SYM_V,SYM_V   DT      .128,.128,.128,.128,.148,.148,.136,.128 ; Знак маленькая V - напряжение бортсети
+0000045F,348E 349F 348E,SYM_F_ER,SYM_F_ER        DT      .142,.159,.142,.149,.155,.149,.142,.159 ; Знак обрыва датчика уровня топлива (пр
+,,,
+,,,
+,,,;-----------------------------------------------------------------------
+,,,;           Таблица преобразования показаний ДАД
+,,,;-----------------------------------------------------------------------
+,,,; MAP sensor MPX4100 pressure=ОКРУГЛ((B2/5+0,152)/0,01059;0)
+,,,        ORG     500
+00000500,3414 3415 3415,MAP_Trans,MAP_Trans       DT      .20,.21,.21,.21,.22,.22,.22,.23,.23,.24
+0000050A,3418 3418 3419,,        DT      .24,.24,.25,.25,.25,.26,.26,.27,.27,.27
+00000514,341C 341C 341C,,        DT      .28,.28,.28,.29,.29,.30,.30,.30,.31,.31
+0000051E,341F 3420 3420,,        DT      .31,.32,.32,.32,.33,.33,.34,.34,.34,.35
+00000528,3423 3423 3424,,        DT      .35,.35,.36,.36,.37,.37,.37,.38,.38,.38
+00000532,3427 3427 3428,,        DT      .39,.39,.40,.40,.40,.41,.41,.41,.42,.42
+0000053C,342A 342B 342B,,        DT      .42,.43,.43,.44,.44,.44,.45,.45,.45,.46
+00000546,342E 342F 342F,,        DT      .46,.47,.47,.47,.48,.48,.48,.49,.49,.50
+00000550,3432 3432 3433,,        DT      .50,.50,.51,.51,.51,.52,.52,.52,.53,.53
+0000055A,3436 3436 3436,,        DT      .54,.54,.54,.55,.55,.55,.56,.56,.57,.57
+00000564,3439 343A 343A,,        DT      .57,.58,.58,.58,.59,.59,.60,.60,.60,.61
+0000056E,343D 343D 343E,,        DT      .61,.61,.62,.62,.62,.63,.63,.64,.64,.64
+00000578,3441 3441 3441,,        DT      .65,.65,.65,.66,.66,.67,.67,.67,.68,.68
+00000582,3444 3445 3445,,        DT      .68,.69,.69,.70,.70,.70,.71,.71,.71,.72
+0000058C,3448 3448 3449,,        DT      .72,.72,.73,.73,.74,.74,.74,.75,.75,.75
+00000596,344C 344C 344D,,        DT      .76,.76,.77,.77,.77,.78,.78,.78,.79,.79
+000005A0,3450 3450 3450,,        DT      .80,.80,.80,.81,.81,.81,.82,.82,.82,.83
+000005AA,3453 3454 3454,,        DT      .83,.84,.84,.84,.85,.85,.85,.86,.86,.87
+000005B4,3457 3457 3458,,        DT      .87,.87,.88,.88,.88,.89,.89,.90,.90,.90
+000005BE,345B 345B 345B,,        DT      .91,.91,.91,.92,.92,.92,.93,.93,.94,.94
+000005C8,345E 345F 345F,,        DT      .94,.95,.95,.95,.96,.96,.97,.97,.97,.98
+000005D2,3462 3462 3463,,        DT      .98,.98,.99,.99,.99
+,,,
+,,,
+,,,
+,,,
+,,,;-----------------------------------------------------------------------
+,,,;           Таблица преобразования показаний расхода топлива
+,,,;-----------------------------------------------------------------------
+,,,        ORG     600
+00000600,,Fuel,Fuel
+,,, include F_485.asm
+,,,; Таблица преобразования расхода топлива
+,,,;   Для форсунки с расходом 485мл/мин
+,,,;
+,,,;
+00000600,3400,RETLW,RETLW  .0
+00000601,3482,RETLW,RETLW  .130
+00000602,3484,RETLW,RETLW  .132
+00000603,3486,RETLW,RETLW  .134
+00000604,3488,RETLW,RETLW  .136
+00000605,3401,RETLW,RETLW  .1
+00000606,3401,RETLW,RETLW  .1
+00000607,3401,RETLW,RETLW  .1
+00000608,3402,RETLW,RETLW  .2
+00000609,3402,RETLW,RETLW  .2
+0000060A,3402,RETLW,RETLW  .2
+0000060B,3402,RETLW,RETLW  .2
+0000060C,3402,RETLW,RETLW  .2
+0000060D,3403,RETLW,RETLW  .3
+0000060E,3403,RETLW,RETLW  .3
+0000060F,3403,RETLW,RETLW  .3
+00000610,3403,RETLW,RETLW  .3
+00000611,3403,RETLW,RETLW  .3
+00000612,3404,RETLW,RETLW  .4
+00000613,3404,RETLW,RETLW  .4
+00000614,3404,RETLW,RETLW  .4
+00000615,3404,RETLW,RETLW  .4
+00000616,3404,RETLW,RETLW  .4
+00000617,3405,RETLW,RETLW  .5
+00000618,3405,RETLW,RETLW  .5
+00000619,3405,RETLW,RETLW  .5
+0000061A,3405,RETLW,RETLW  .5
+0000061B,3405,RETLW,RETLW  .5
+0000061C,3405,RETLW,RETLW  .5
+0000061D,3406,RETLW,RETLW  .6
+0000061E,3406,RETLW,RETLW  .6
+0000061F,3406,RETLW,RETLW  .6
+00000620,3406,RETLW,RETLW  .6
+00000621,3406,RETLW,RETLW  .6
+00000622,3407,RETLW,RETLW  .7
+00000623,3407,RETLW,RETLW  .7
+00000624,3407,RETLW,RETLW  .7
+00000625,3407,RETLW,RETLW  .7
+00000626,3407,RETLW,RETLW  .7
+00000627,3408,RETLW,RETLW  .8
+00000628,3408,RETLW,RETLW  .8
+00000629,3408,RETLW,RETLW  .8
+0000062A,3408,RETLW,RETLW  .8
+0000062B,3408,RETLW,RETLW  .8
+0000062C,3409,RETLW,RETLW  .9
+0000062D,3409,RETLW,RETLW  .9
+0000062E,3409,RETLW,RETLW  .9
+0000062F,3409,RETLW,RETLW  .9
+00000630,3409,RETLW,RETLW  .9
+00000631,340A,RETLW,RETLW  .10
+00000632,340A,RETLW,RETLW  .10
+00000633,340A,RETLW,RETLW  .10
+00000634,340A,RETLW,RETLW  .10
+00000635,340A,RETLW,RETLW  .10
+00000636,340B,RETLW,RETLW  .11
+00000637,340B,RETLW,RETLW  .11
+00000638,340B,RETLW,RETLW  .11
+00000639,340B,RETLW,RETLW  .11
+0000063A,340B,RETLW,RETLW  .11
+0000063B,340C,RETLW,RETLW  .12
+0000063C,340C,RETLW,RETLW  .12
+0000063D,340C,RETLW,RETLW  .12
+0000063E,340C,RETLW,RETLW  .12
+0000063F,340C,RETLW,RETLW  .12
+00000640,340D,RETLW,RETLW  .13
+00000641,340D,RETLW,RETLW  .13
+00000642,340D,RETLW,RETLW  .13
+00000643,340D,RETLW,RETLW  .13
+00000644,340D,RETLW,RETLW  .13
+00000645,340E,RETLW,RETLW  .14
+00000646,340E,RETLW,RETLW  .14
+00000647,340E,RETLW,RETLW  .14
+00000648,340E,RETLW,RETLW  .14
+00000649,340E,RETLW,RETLW  .14
+0000064A,340F,RETLW,RETLW  .15
+0000064B,340F,RETLW,RETLW  .15
+0000064C,340F,RETLW,RETLW  .15
+0000064D,340F,RETLW,RETLW  .15
+0000064E,340F,RETLW,RETLW  .15
+0000064F,3410,RETLW,RETLW  .16
+00000650,3410,RETLW,RETLW  .16
+00000651,3410,RETLW,RETLW  .16
+00000652,3410,RETLW,RETLW  .16
+00000653,3410,RETLW,RETLW  .16
+00000654,3410,RETLW,RETLW  .16
+00000655,3411,RETLW,RETLW  .17
+00000656,3411,RETLW,RETLW  .17
+00000657,3411,RETLW,RETLW  .17
+00000658,3411,RETLW,RETLW  .17
+00000659,3411,RETLW,RETLW  .17
+0000065A,3412,RETLW,RETLW  .18
+0000065B,3412,RETLW,RETLW  .18
+0000065C,3412,RETLW,RETLW  .18
+0000065D,3412,RETLW,RETLW  .18
+0000065E,3412,RETLW,RETLW  .18
+0000065F,3413,RETLW,RETLW  .19
+00000660,3413,RETLW,RETLW  .19
+00000661,3413,RETLW,RETLW  .19
+00000662,3413,RETLW,RETLW  .19
+00000663,3413,RETLW,RETLW  .19
+00000664,3414,RETLW,RETLW  .20
+00000665,3414,RETLW,RETLW  .20
+00000666,3414,RETLW,RETLW  .20
+00000667,3414,RETLW,RETLW  .20
+00000668,3414,RETLW,RETLW  .20
+00000669,3415,RETLW,RETLW  .21
+0000066A,3415,RETLW,RETLW  .21
+0000066B,3415,RETLW,RETLW  .21
+0000066C,3415,RETLW,RETLW  .21
+0000066D,3415,RETLW,RETLW  .21
+0000066E,3416,RETLW,RETLW  .22
+0000066F,3416,RETLW,RETLW  .22
+00000670,3416,RETLW,RETLW  .22
+00000671,3416,RETLW,RETLW  .22
+00000672,3416,RETLW,RETLW  .22
+00000673,3417,RETLW,RETLW  .23
+00000674,3417,RETLW,RETLW  .23
+00000675,3417,RETLW,RETLW  .23
+00000676,3417,RETLW,RETLW  .23
+00000677,3417,RETLW,RETLW  .23
+00000678,3418,RETLW,RETLW  .24
+00000679,3418,RETLW,RETLW  .24
+0000067A,3418,RETLW,RETLW  .24
+0000067B,3418,RETLW,RETLW  .24
+0000067C,3418,RETLW,RETLW  .24
+0000067D,3419,RETLW,RETLW  .25
+0000067E,3419,RETLW,RETLW  .25
+0000067F,3419,RETLW,RETLW  .25
+00000680,3419,RETLW,RETLW  .25
+00000681,3419,RETLW,RETLW  .25
+00000682,341A,RETLW,RETLW  .26
+00000683,341A,RETLW,RETLW  .26
+00000684,341A,RETLW,RETLW  .26
+00000685,341A,RETLW,RETLW  .26
+00000686,341A,RETLW,RETLW  .26
+00000687,341A,RETLW,RETLW  .26
+00000688,341B,RETLW,RETLW  .27
+00000689,341B,RETLW,RETLW  .27
+0000068A,341B,RETLW,RETLW  .27
+0000068B,341B,RETLW,RETLW  .27
+0000068C,341B,RETLW,RETLW  .27
+0000068D,341C,RETLW,RETLW  .28
+0000068E,341C,RETLW,RETLW  .28
+0000068F,341C,RETLW,RETLW  .28
+00000690,341C,RETLW,RETLW  .28
+00000691,341C,RETLW,RETLW  .28
+00000692,341D,RETLW,RETLW  .29
+00000693,341D,RETLW,RETLW  .29
+00000694,341D,RETLW,RETLW  .29
+00000695,341D,RETLW,RETLW  .29
+00000696,341D,RETLW,RETLW  .29
+00000697,341E,RETLW,RETLW  .30
+00000698,341E,RETLW,RETLW  .30
+00000699,341E,RETLW,RETLW  .30
+0000069A,341E,RETLW,RETLW  .30
+0000069B,341E,RETLW,RETLW  .30
+0000069C,341F,RETLW,RETLW  .31
+0000069D,341F,RETLW,RETLW  .31
+0000069E,341F,RETLW,RETLW  .31
+0000069F,341F,RETLW,RETLW  .31
+000006A0,341F,RETLW,RETLW  .31
+000006A1,3420,RETLW,RETLW  .32
+000006A2,3420,RETLW,RETLW  .32
+000006A3,3420,RETLW,RETLW  .32
+000006A4,3420,RETLW,RETLW  .32
+000006A5,3420,RETLW,RETLW  .32
+000006A6,3421,RETLW,RETLW  .33
+000006A7,3421,RETLW,RETLW  .33
+000006A8,3421,RETLW,RETLW  .33
+000006A9,3421,RETLW,RETLW  .33
+000006AA,3421,RETLW,RETLW  .33
+000006AB,3422,RETLW,RETLW  .34
+000006AC,3422,RETLW,RETLW  .34
+000006AD,3422,RETLW,RETLW  .34
+000006AE,3422,RETLW,RETLW  .34
+000006AF,3422,RETLW,RETLW  .34
+000006B0,3423,RETLW,RETLW  .35
+000006B1,3423,RETLW,RETLW  .35
+000006B2,3423,RETLW,RETLW  .35
+000006B3,3423,RETLW,RETLW  .35
+000006B4,3423,RETLW,RETLW  .35
+000006B5,3424,RETLW,RETLW  .36
+000006B6,3424,RETLW,RETLW  .36
+000006B7,3424,RETLW,RETLW  .36
+000006B8,3424,RETLW,RETLW  .36
+000006B9,3424,RETLW,RETLW  .36
+000006BA,3425,RETLW,RETLW  .37
+000006BB,3425,RETLW,RETLW  .37
+000006BC,3425,RETLW,RETLW  .37
+000006BD,3425,RETLW,RETLW  .37
+000006BE,3425,RETLW,RETLW  .37
+000006BF,3425,RETLW,RETLW  .37
+000006C0,3426,RETLW,RETLW  .38
+000006C1,3426,RETLW,RETLW  .38
+000006C2,3426,RETLW,RETLW  .38
+000006C3,3426,RETLW,RETLW  .38
+000006C4,3426,RETLW,RETLW  .38
+000006C5,3427,RETLW,RETLW  .39
+000006C6,3427,RETLW,RETLW  .39
+000006C7,3427,RETLW,RETLW  .39
+000006C8,3427,RETLW,RETLW  .39
+000006C9,3427,RETLW,RETLW  .39
+000006CA,3428,RETLW,RETLW  .40
+000006CB,3428,RETLW,RETLW  .40
+000006CC,3428,RETLW,RETLW  .40
+000006CD,3428,RETLW,RETLW  .40
+000006CE,3428,RETLW,RETLW  .40
+000006CF,3429,RETLW,RETLW  .41
+000006D0,3429,RETLW,RETLW  .41
+000006D1,3429,RETLW,RETLW  .41
+000006D2,3429,RETLW,RETLW  .41
+000006D3,3429,RETLW,RETLW  .41
+000006D4,342A,RETLW,RETLW  .42
+000006D5,342A,RETLW,RETLW  .42
+000006D6,342A,RETLW,RETLW  .42
+000006D7,342A,RETLW,RETLW  .42
+000006D8,342A,RETLW,RETLW  .42
+000006D9,342B,RETLW,RETLW  .43
+000006DA,342B,RETLW,RETLW  .43
+000006DB,342B,RETLW,RETLW  .43
+000006DC,342B,RETLW,RETLW  .43
+000006DD,342B,RETLW,RETLW  .43
+000006DE,342C,RETLW,RETLW  .44
+000006DF,342C,RETLW,RETLW  .44
+000006E0,342C,RETLW,RETLW  .44
+000006E1,342C,RETLW,RETLW  .44
+000006E2,342C,RETLW,RETLW  .44
+000006E3,342D,RETLW,RETLW  .45
+000006E4,342D,RETLW,RETLW  .45
+000006E5,342D,RETLW,RETLW  .45
+000006E6,342D,RETLW,RETLW  .45
+000006E7,342D,RETLW,RETLW  .45
+000006E8,342E,RETLW,RETLW  .46
+000006E9,342E,RETLW,RETLW  .46
+000006EA,342E,RETLW,RETLW  .46
+000006EB,342E,RETLW,RETLW  .46
+000006EC,342E,RETLW,RETLW  .46
+000006ED,342F,RETLW,RETLW  .47
+000006EE,342F,RETLW,RETLW  .47
+000006EF,342F,RETLW,RETLW  .47
+000006F0,342F,RETLW,RETLW  .47
+000006F1,342F,RETLW,RETLW  .47
+000006F2,342F,RETLW,RETLW  .47
+000006F3,3430,RETLW,RETLW  .48
+000006F4,3430,RETLW,RETLW  .48
+000006F5,3430,RETLW,RETLW  .48
+000006F6,3430,RETLW,RETLW  .48
+000006F7,3430,RETLW,RETLW  .48
+000006F8,3431,RETLW,RETLW  .49
+000006F9,3431,RETLW,RETLW  .49
+000006FA,3431,RETLW,RETLW  .49
+000006FB,3431,RETLW,RETLW  .49
+000006FC,3431,RETLW,RETLW  .49
+000006FD,3432,RETLW,RETLW  .50
+000006FE,3432,RETLW,RETLW  .50
+000006FF,3432,RETLW,RETLW  .50
+,,,
+,,,
+,,,
+,,,
+,,,; Вывод двоичных символов (для отладки)
+,,,HEXWIEV let     temp1,39
+00000700,3039,,        - movlw   39
+00000701,00C8,,        - movwf   temp1
+00000702,0E26,,        SWAPF   ERR,W
+00000703,390F,,        ANDLW   0FH
+00000704,3E30,,        ADDLW   30
+00000705,02C8,,        SUBWF   temp1,F
+00000706,1C00,,        BTFSS   STATUS,C
+00000707,3E07,,        ADDLW   7
+,,,
+00000708,231B,,        CALL    sch_b
+,,,        let     temp1,39
+00000709,3039,,        - movlw   39
+0000070A,00C8,,        - movwf   temp1
+0000070B,0826,,        Movfw   ERR
+0000070C,390F,,        ANDLW   0FH
+0000070D,3E30,,        ADDLW   30
+0000070E,02C8,,        SUBWF   temp1,F
+0000070F,1C00,,        BTFSS   STATUS,C
+00000710,3E07,,        ADDLW   7
+00000711,231B,,        CALL    sch_b
+00000712,0008,,        RETURN
+,,,        END

@@ -1,0 +1,138 @@
+CONVERT         CODE      ; converts 24 bit binary value in DISPH2,DISPM2,DISPL2 to
+convert                  ; 8 digit decimal number for the display
+                     ; result is stored in D76,D54,D32,D10
+      movf   DISPH1,W
+      movwf   DISPH2
+      movf   DISPM1,W
+      movwf   DISPM2
+      movf   DISPL1,W
+      movwf   DISPL2
+
+      bcf   STATUS,C
+      movlw   .24
+      movwf   BIT
+      clrf   D76
+      clrf   D54
+      clrf   D32
+      clrf   D10
+loop24        rlf   DISPL2,F
+      rlf   DISPM2,F
+      rlf   DISPH2,F
+      rlf   D10,F
+      rlf   D32,F
+      rlf   D54,F
+      rlf   D76,F
+      decfsz   BIT,F
+      goto   adj_dec
+      retlw   0
+
+adj_dec       movlw   D10
+      movwf   FSR
+      call   adj_bcd
+      
+      movlw   D32
+      movwf   FSR
+      call   adj_bcd
+
+      movlw   D54
+      movwf   FSR
+      call   adj_bcd
+
+      movlw   D76
+      movwf   FSR
+      call   adj_bcd
+
+      goto   loop24
+
+adj_bcd       movlw  0x03
+      addwf   0,W
+      movwf   temp
+      btfsc   temp,3
+      movwf   0
+      movlw   0x30
+      addwf   0,W
+      movwf   temp
+      btfsc   temp,7
+      movwf   0
+      
+      retlw   0
+
+B2_BCD
+  bcf  STATUS, C    ;clear the carry bit
+  bsf  count, 4        ;set count = 16
+  clrf  R0
+  clrf  R1
+  clrf  R2
+loop16  
+  rlcf  L_byte
+  rlcf H_byte
+  rlcf  R2
+  rlcf  R1
+  rlcf  R0
+  decfsz  count
+  goto  adjDEC
+  retlw  0
+adjDEC  
+  movf  R2, W
+  movwf  FSR0
+  call  adjBCD
+  incf FSR0
+  call  adjBCD
+  incf FSR0
+  call  adjBCD
+  goto  loop16
+adjBCD  
+  movlw  0x003
+  addwf  INDF0,W
+  movwf  temp
+  btfsc  temp,3     ;test if result > 7
+  movwf  INDF0
+  movlw  0x030
+  addwf  INDF0,W
+  movwf  temp
+  btfsc  temp,7     ;test if result > 7
+  movwf  INDF0     ;save as MSD
+  retlw 0
+
+
+B2_BCD  bcf     STATUS,0                ; clear the carry bit
+   movlw   .16
+   movwf   count
+   clrf    R0
+   clrf    R1
+   clrf    R2
+ loop16  rlf     L_byte, F
+   rlf     H_byte, F
+   rlf     R2, F
+   rlf     R1, F
+   rlf     R0, F
+ ;
+   decfsz  count, F
+   goto    adjDEC
+   RETLW   0
+ ;
+ adjDEC  movlw   R2
+   movwf   FSR
+   call    adjBCD
+ ;
+   movlw   R1
+   movwf   FSR
+   call    adjBCD
+ ;
+   movlw   R0
+   movwf   FSR
+   call    adjBCD
+ ;
+   goto    loop16
+ ;
+ adjBCD  movlw   3
+   addwf   0,W
+   movwf   temp
+   btfsc   temp,3          ; test if result > 7
+   movwf   0
+   movlw   30
+   addwf   0,W
+   movwf   temp
+   btfsc   temp,7          ; test if result > 7
+   movwf   0               ; save as MSD
+   RETLW   0
